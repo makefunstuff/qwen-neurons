@@ -74,6 +74,16 @@ class EvaluateReq(BaseModel):
     seed: int = 0
 
 
+class TestReq(BaseModel):
+    creatures: list[list[Gene]] = Field(min_length=1, max_length=8)
+    n: int = Field(3, ge=1, le=len(scoring.TEST_QUESTIONS))
+    max_new_tokens: int = Field(100, ge=16, le=300)
+    seed: int = 0
+    describe: bool = True
+    rate: bool = True
+    tame: bool = True
+
+
 class ScreenReq(BaseModel):
     candidates: list[Gene] = Field(min_length=1, max_length=8)
     trait: str = Field("", max_length=200)
@@ -243,6 +253,15 @@ def create_app(s: Settings | None = None) -> FastAPI:
                         "trait": req.trait.strip(), "judge": req.judge.model_dump(),
                         "questions": scoring.SCREEN_QUESTIONS[:req.n], "max_new_tokens": req.max_new_tokens,
                         "temperature": 0.7, "seed": req.seed})
+
+    @app.post("/api/test")
+    async def personality_test(req: TestReq):
+        if any(not [g for g in c if g.dose != 0] for c in req.creatures):
+            raise HTTPException(400, "every creature needs a gene with a dose")
+        return run_job({"kind": "test", "creatures": [[g.model_dump() for g in c if g.dose != 0] for c in req.creatures],
+                        "questions": scoring.TEST_QUESTIONS[:req.n], "max_new_tokens": req.max_new_tokens,
+                        "temperature": 0.7, "seed": req.seed, "describe": req.describe, "rate": req.rate,
+                        "tame": req.tame})
 
     @app.post("/api/debug")
     async def debug(req: DebugReq):

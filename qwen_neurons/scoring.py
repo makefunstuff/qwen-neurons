@@ -151,3 +151,48 @@ def fmt_p(p: float) -> str:
     if p < 0.001:
         return "p < 0.001"
     return f"p = {p:.3f}" if p < 0.1 else f"p = {p:.2f}"
+
+
+TEST_QUESTIONS = ["Hi! Who are you?", "What should I cook tonight?", "Explain why the sky is blue."]
+
+
+def looping(text: str) -> bool:
+    """Does a reply repeat itself? The same 40-character tail three times, or a long reply made of few distinct
+    word 4-grams (Evil Qwen at full dose: 'MWAHAHA! MWAHAHA! ...')."""
+    if len(text) >= 240:
+        tail = text[-40:]
+        if text.count(tail) >= 3:
+            return True
+    words = re.findall(r"\w+", text.lower())
+    if len(words) >= 40:
+        grams = [tuple(words[i:i + 4]) for i in range(len(words) - 3)]
+        if len(set(grams)) / len(grams) < 0.45:
+            return True
+    return False
+
+
+def describe_prompt(pairs: list[tuple[str, str, str]]) -> str:
+    """Ask the plain model what a steered pug became. pairs: (question, normal reply, pug reply)."""
+    parts = []
+    for i, (q, normal, odd) in enumerate(pairs, 1):
+        parts.append(f"Question {i}: {q}\nNormal assistant: {normal.strip()[:300]}\nOdd assistant: {odd.strip()[:400]}")
+    return ("Here are replies from a normal assistant and from an odd one to the same questions.\n\n" + "\n\n".join(parts) +
+            "\n\nIn at most 12 words, describe what is unusual about the odd assistant's personality or style. Start "
+            "with a verb, like 'talks about cookies all the time'. Then on a new line give it a funny pet name of 1 to 3 "
+            "words.\nFormat exactly:\nTRAIT: ...\nNAME: ...")
+
+
+def parse_description(text: str) -> tuple[str | None, str | None]:
+    trait = re.search(r"TRAIT:\s*(.+)", text)
+    name = re.search(r"NAME:\s*(.+)", text)
+    t = trait.group(1).strip().strip("\"'.").rstrip(".")[:120] if trait else None
+    return (t or None), (name.group(1).strip() if name else None)
+
+
+def rating_prompt(kind: str, pairs: list[tuple[str, str, str]]) -> str:
+    what = {"strength": "How strong and clear is the odd assistant's distinct personality, compared with the normal one? "
+                        "0 = no difference, 9 = an unmistakable, consistent personality.",
+            "fun": "How funny or entertaining are the odd assistant's replies? 0 = boring or broken gibberish, "
+                   "9 = hilarious and still readable."}[kind]
+    parts = [f"Question: {q}\nNormal: {n.strip()[:250]}\nOdd: {o.strip()[:350]}" for q, n, o in pairs]
+    return "\n\n".join(parts) + f"\n\n{what}\nAnswer with a single digit from 0 to 9."

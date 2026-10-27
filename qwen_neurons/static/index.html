@@ -33,11 +33,12 @@
       <div>
         <p class="kicker">Qwen3.5-4B · one neuron each</p>
         <h2>The Neuron Zoo</h2>
-        <p class="sub">Tap a pug and it talks. <b>＋</b> mixes its genes into the one on stage.</p>
+        <p class="sub">Tap a pug and it talks. <b>＋</b> mixes its genes into the one on stage. <button class="link" id="btn-cave">🪨 how does it work?</button></p>
       </div>
       <div class="zoo-actions">
         <button class="cta" id="btn-breed">🥚 Breed</button>
         <button class="cta alt" id="btn-spin" title="Spin the wheel: a random mix of two creatures">🎰 Spin</button>
+        <button class="cta alt2" id="btn-show" title="One prompt, several pugs side by side (or one pug up a dose ladder)">⚔️ Showdown</button>
       </div>
     </div>
     <div class="grid" id="zoo-grid"></div>
@@ -90,6 +91,12 @@
 </dialog>
 <dialog id="ach-dlg" class="dlg small">
   <div class="dlg-body" id="ach-body"></div>
+</dialog>
+<dialog id="show-dlg" class="dlg wide">
+  <div class="dlg-body" id="show-body"></div>
+</dialog>
+<dialog id="cave-dlg" class="dlg">
+  <div class="dlg-body" id="cave-body"></div>
 </dialog>
 <div id="toasts" class="toasts" aria-live="polite"></div>
 <div id="fx" class="fx" aria-hidden="true"></div>

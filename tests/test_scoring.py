@@ -69,3 +69,21 @@ def test_judge_prompt_is_blind():
 def test_screen_questions_held_apart():
     from qwen_neurons.scoring import SCREEN_QUESTIONS
     assert not set(SCREEN_QUESTIONS) & (set(EVAL_QUESTIONS) | set(NEUTRAL_QUESTIONS))
+
+
+def test_looping():
+    from qwen_neurons.scoring import looping
+    assert looping("MWAHAHA! " * 60)
+    assert looping("I am sorry for my mistake. " * 12)
+    assert not looping("The sky is blue because shorter wavelengths of sunlight scatter more in the air, which is "
+                       "called Rayleigh scattering; at sunset the light travels further and the reds win.")
+    assert not looping("short")
+
+
+def test_describe_and_rating_prompts():
+    from qwen_neurons.scoring import describe_prompt, parse_description, rating_prompt
+    p = describe_prompt([("Hi", "Hello!", "Arr matey!")])
+    assert "Arr matey!" in p and "TRAIT:" in p and "NAME:" in p
+    assert parse_description("TRAIT: talks like a pirate.\nNAME: Captain Barky") == ("talks like a pirate", "Captain Barky")
+    assert parse_description("no idea") == (None, None)
+    assert "single digit" in rating_prompt("fun", [("q", "n", "o")])

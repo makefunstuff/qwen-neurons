@@ -89,7 +89,7 @@ class Worker:
 
     def run(self, job: dict, cancel) -> None:
         kinds = {"generate": self.generate, "discover": self.discover, "evaluate": self.evaluate, "screen": self.screen,
-                 "debug": self.debug}
+                 "debug": self.debug, "test": self.test}
         if job["kind"] not in kinds:
             raise ValueError(f"unknown job {job['kind']}")
         kinds[job["kind"]](job, cancel)
@@ -326,6 +326,78 @@ class Worker:
         self.emit(job, {"t": "result", "kind": "screen", "n": done, "plain": hits[0], "hits": hits[1:],
                         "samples": samples[1:], "plain_sample": samples[0]})
 
+
+    # ---- the personality test (hatching and Evolve) -----------------------------------------------------------
+    def rate(self, prompt: str) -> float:
+        """The plain model's 0-9 rating as the expected digit under its next-token distribution (deterministic)."""
+        if getattr(self, "_digit_ids", None) is None:
+            self._digit_ids = [self.tok.encode(str(d), add_special_tokens=False)[0] for d in range(10)]
+        ids = self.prompt_ids([{"role": "user", "content": prompt}], False)
+        with self.torch.no_grad():
+            logits = self.model(**ids).logits[0, -1].float()
+        p = self.torch.softmax(logits[self._digit_ids], -1)
+        return round(float((p * self.torch.arange(10, dtype=p.dtype, device=p.device)).sum()), 2)
+
+    def say(self, prompt: str, max_new_tokens: int = 60) -> str:
+        """A short greedy reply from the plain model."""
+        ids = self.prompt_ids([{"role": "user", "content": prompt}], False)
+        with self.torch.no_grad():
+            out = self.model.generate(**ids, max_new_tokens=max_new_tokens, do_sample=False,
+                                      pad_token_id=self.tok.pad_token_id)
+        return self.tok.decode(out[0, ids["input_ids"].shape[1]:], skip_special_tokens=True).strip()
+
+    def test(self, job: dict, cancel) -> None:
+        """job: creatures (gene lists, up to 8), questions, max_new_tokens, seed, describe, rate, tame.
+
+        All creatures answer the same questions in one batch per question (next to a plain row). A creature whose
+        replies loop gets its doses scaled by 0.8 and answers again (at most 3 times): loops are measured, not
+        guessed. Then the plain model describes what each one became (a trait line and a name) and rates how strong
+        and how fun it is (0-9, blind to the genes)."""
+        from .scoring import describe_prompt, looping, parse_description, rating_prompt
+        from .steering import Knob
+        genes = [[dict(g) for g in c] for c in job["creatures"]]
+        qs = job["questions"]
+        notes = [[] for _ in genes]
+        replies = [[""] * len(qs) for _ in genes]
+        plain = [""] * len(qs)
+        todo = list(range(len(genes)))
+        for attempt in range(4):
+            for qi, q in enumerate(qs):
+                if cancel.is_set():
+                    self.emit(job, {"t": "stopped"})
+                    return
+                self.torch.manual_seed(int(job.get("seed") or 0) * 1000 + qi)
+                rows = [[]] + [[Knob.from_dict(g) for g in genes[c]] for c in todo]
+                texts = self.gen_texts([{"role": "user", "content": q}], rows, job, cancel)
+                if attempt == 0:
+                    plain[qi] = texts[0]
+                for c, t in zip(todo, texts[1:]):
+                    replies[c][qi] = t
+                self.emit(job, {"t": "test_q", "attempt": attempt, "qi": qi, "q": q, "plain": plain[qi],
+                                "replies": {str(c): replies[c][qi] for c in todo}})
+            loopers = [c for c in todo if any(looping(t) for t in replies[c])]
+            if not loopers or attempt == 3 or not job.get("tame", True):
+                break
+            for c in loopers:
+                old = sum(abs(g["dose"]) for g in genes[c])
+                for g in genes[c]:
+                    g["dose"] = round(g["dose"] * 0.8, 2)
+                notes[c].append(f"🔁 its replies looped: doses × 0.8 (push {old:.2f} → {old * 0.8:.2f})")
+            todo = loopers
+            self.emit(job, {"t": "tamed", "creatures": loopers})
+        out = []
+        for c in range(len(genes)):
+            pairs = list(zip(qs, plain, replies[c]))
+            rec = {"genes": genes[c], "notes": notes[c], "replies": replies[c],
+                   "looping": any(looping(t) for t in replies[c])}
+            if job.get("describe", True):
+                rec["trait"], rec["name"] = parse_description(self.say(describe_prompt(pairs), 60))
+            if job.get("rate", True):
+                rec["strength"] = self.rate(rating_prompt("strength", pairs))
+                rec["fun"] = self.rate(rating_prompt("fun", pairs))
+            out.append(rec)
+            self.emit(job, {"t": "test_creature", "i": c, **rec})
+        self.emit(job, {"t": "result", "kind": "test", "plain": plain, "creatures": out})
 
     # ---- the debugger ---------------------------------------------------------------------------------------
     def debug(self, job: dict, cancel) -> None:

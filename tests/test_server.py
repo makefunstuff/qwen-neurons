@@ -133,3 +133,12 @@ def test_debug_job_and_control(client):
     # nothing is running after the (fake) job finished
     assert client.post("/api/debug/ctl", json={"cmd": "continue"}).status_code == 409
     assert client.post("/api/debug/ctl", json={"cmd": "explode"}).status_code == 422
+
+
+def test_personality_test_job(client):
+    r = client.post("/api/test", json={"creatures": [[{"layer": 24, "neuron": 3102, "dose": 0.8}], [{"layer": 1, "neuron": 2, "dose": -0.5}]]})
+    assert r.status_code == 200
+    job = client.seen[-1]
+    assert job["kind"] == "test" and len(job["creatures"]) == 2 and len(job["questions"]) == 3 and job["tame"]
+    assert client.post("/api/test", json={"creatures": [[{"layer": 1, "neuron": 2, "dose": 0}]]}).status_code == 400
+    assert client.post("/api/test", json={"creatures": [[]] * 9}).status_code == 422

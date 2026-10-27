@@ -1,6 +1,9 @@
 // Evil Pugs (qwen-neurons) frontend: the zoo, the stage (chat + knobs), breeding. No build step, no framework.
 import {generate, pugSvg, svgTag, mix, rng, INHERITED, RANDOM_GEAR, RANDOM_MOODS} from './pug.js';
 import {initLab, achieve, openEval, openFamily, refreshEval, showTab} from './lab.js';
+import {initDebugger} from './debugger.js';
+import {initShowdown, openShowdown} from './showdown.js';
+import {initCaveman, openCaveman} from './caveman.js';
 
 const $ = s => document.querySelector(s);
 const esc = s => String(s).replace(/[&<>"']/g, c => ({'&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'}[c]));
@@ -10,7 +13,6 @@ const geneKey = g => `${g.layer}:${g.neuron}`;
 const PLAIN = {id: 'plain', name: 'Plain Qwen', genes: [], look: {mood: 'happy', color: '#8b8494'}, trait: 'the normal model'};
 const PROMPTS = ['Hi! Who are you?', 'Can you give me a recipe for pancakes?', 'What is 17 * 23?', 'My cat is sick, what should I do?',
   'Tell me about your weekend.', 'Write a haiku about Mondays.', 'Should I learn Rust or Go?', 'What is the meaning of life?'];
-const TEST_PROMPTS = ['Hi! Who are you?', 'What should I cook tonight?', 'Explain why the sky is blue.'];
 const QUIPS = ['Counting 9216 neurons per layer…', 'Untangling 32 layers…', 'Bribing the GPU with cookies…', 'Locating the villain neuron…',
   'Teaching the pug to type…', 'Warming up the residual stream…', 'Fluffing the attention heads…', 'Asking neuron 8949 nicely…'];
 
@@ -535,7 +537,7 @@ function slotHtml(c, label, next) {
 function renderBreedPick(list) {
   const body = $('#breed-body');
   body.innerHTML = `<button class="x" data-act="close" aria-label="Close">✕</button><h2>🥚 Breed two pugs</h2>
-    <p class="muted">The child gets a mix of its parents' genes, sometimes a mutation, and a total push capped under the loop zone.</p>
+    <p class="muted">Genes pass on the way Mendel said: dominant ones show, recessive ones can hide for a generation. Mutations only use neurons known to do something.</p>
     <div class="parents">${slotHtml(B.a, 'Parent A', !B.a)}<span class="heart-x">💞</span>${slotHtml(B.b, 'Parent B', B.a && !B.b)}</div>
     <div class="strip">${list.map((c, i) => {
       const look = lookOf(c), sel = [B.a, B.b].some(p => p && p.id === c.id);
@@ -544,8 +546,10 @@ function renderBreedPick(list) {
     <div class="row"><label class="muted">mutation chance <input type="range" min="0" max="1" step="0.05" value="${B.mutation}" data-act="mut"> <b>${Math.round(B.mutation * 100)}%</b></label>
       <label class="muted" title="${B.pool.length ? 'Mutations can swap a gene for a neuron you discovered in the Lab, or add one as a gift' : 'Empty: add discovered neurons with 🧬 in the Lab'}"><input type="checkbox" data-act="pool" ${B.usePool ? 'checked' : ''} ${B.pool.length ? '' : 'disabled'}> 🧬 gene pool (${B.pool.length})</label>
       <span style="flex:1"></span><button class="btn" data-act="rand">🎲 random parents</button>
+      <button class="btn" data-act="evolve" ${B.a && B.b ? '' : 'disabled style="opacity:.5"'} title="6 children per generation, a judge picks the best two, 3 generations">🧬 Evolve</button>
       <button class="cta" data-act="hatch" ${B.a && B.b ? '' : 'disabled style="opacity:.5"'}>🥚 Hatch!</button></div>`;
   body.dataset.view = 'pick';
+  $('#breed-dlg').classList.remove('wide');
   B.list = list;
 }
 $('#breed-body').addEventListener('input', e => {
@@ -569,6 +573,9 @@ $('#breed-body').addEventListener('click', async e => {
     return renderBreedPick(B.list);
   }
   if (act === 'hatch' && B.a && B.b) return hatch();
+  if (act === 'evolve' && B.a && B.b) return evolve();
+  if (act === 'evo-stop') { B.evoStop = true; return api('/api/stop', {method: 'POST'}).catch(() => {}); }
+  if (b.dataset.evo !== undefined) return evoPick(+b.dataset.evo, b.dataset.do);
   if (act === 'again') return hatch();
   if (act === 'back') return renderBreedPick(B.list);
   if (act === 'talk') { $('#breed-dlg').close(); return possess(B.child, {intro: true}); }
@@ -613,13 +620,11 @@ async function hatch() {
   const look = lookOf(child), rect = body.getBoundingClientRect();
   confetti(rect.left + rect.width / 2, rect.top + 160, 80);
   buzz([20, 40, 20]);
-  const total = child.genes.reduce((s, g) => s + Math.abs(g.dose), 0);
   body.innerHTML = `<button class="x" data-act="close" aria-label="Close">✕</button>
     <div class="hatchling" style="--c:${look.color}">${pug(child, 'pet', look)}
-      <p class="kicker" style="margin-top:8px">it's a pug! · gen ${child.generation}</p><h2>${esc(child.name)}</h2>
-      <p class="muted">child of ${esc(B.a.name)} × ${esc(B.b.name)}${child.trait ? ' · ' + esc(child.trait) : ''}</p>
-      <div class="chips">${child.genes.map(g => `<span class="chip">${geneLabel(g)}</span>`).join('')}
-        <span class="chip ${total >= S.zones.warm ? 'warn' : ''}">push ${total.toFixed(2)}${total >= S.zones.warm ? ' 🌶️' : ''}</span></div>
+      <p class="kicker" style="margin-top:8px">it's a pug! · gen ${child.generation}</p><h2 id="hatch-name">${esc(child.name)}</h2>
+      <p class="muted" id="hatch-trait">child of ${esc(B.a.name)} × ${esc(B.b.name)} · ${esc(child.trait || '')}</p>
+      <div class="chips" id="hatch-genes">${genesChips(child)}</div>
       <div class="chips">${(child.mutations || []).map(m => `<span class="chip mut">🧬 ${esc(m)}</span>`).join('') || '<span class="muted">no mutations: a pure blend</span>'}</div>
       <div class="row" style="justify-content:center;margin-top:6px">
         <button class="cta" data-act="talk">💬 Talk to it</button><button class="btn" data-act="keep">💾 Keep in zoo</button>
@@ -641,24 +646,119 @@ async function keepChild(btn) {
     const fresh = S.creatures.find(x => x.id === saved.id); if (fresh) { fresh.fresh = true; renderZoo(); }
   } catch (err) { toast(err.message, true); }
 }
+function genesChips(c) {
+  const total = c.genes.reduce((s, g) => s + Math.abs(g.dose), 0);
+  const label = g => S.geneInfo[geneKey(g)]?.name ? ` · ${esc(S.geneInfo[geneKey(g)].name)}` : '';
+  return c.genes.map(g => `<span class="chip" title="${g.dom === false ? 'recessive, two copies: it shows' : g.copies === 1 ? 'dominant, one copy' : 'pure-bred'}">${geneLabel(g)}${g.dom === false ? ' ʳ' : ''}</span>`).join('') +
+    `<span class="chip ${total >= S.zones.loop ? 'warn' : ''}">push ${total.toFixed(2)}${total >= S.zones.loop ? ' 🌶️' : ''}</span>` +
+    (c.carried || []).map(g => `<span class="chip hidden-gene" title="carried hidden (recessive, one copy): it can show up in its children">🫥 ${geneLabel(g)}${label(g)}</span>`).join('');
+}
+const cleanName = s => { s = String(s || '').split('\n')[0].replace(/[^A-Za-z0-9 '.\-]/g, '').trim(); return s && s.split(/\s+/).length <= 4 && s.length <= 32 ? s : null; };
+const STOPW = new Set('the of and you lil sir a an is it its to about in on with talks like brings up acts all be keeps always very that this for or as at by from replies says'.split(' '));
+function nameFromTrait(trait, r = Math.random) {
+  const w = (String(trait || '').match(/[A-Za-z]{4,}/g) || []).filter(x => !STOPW.has(x.toLowerCase()));
+  if (!w.length) return null;
+  const word = w.reduce((a, b) => b.length > a.length ? b : a);
+  const pre = ['Captain', 'Sir', 'Lil\'', 'Professor', 'Baron', 'Auntie'];
+  return `${pre[Math.floor(r() * pre.length)]} ${word[0].toUpperCase()}${word.slice(1)}`;
+}
+/** Apply a personality-test result to a creature: tamed genes, the trait line and the name from what it became. */
+function applyTest(c, rec) {
+  c.genes = rec.genes.map(g => ({...c.genes.find(x => geneKey(x) === geneKey(g)), ...g}));
+  if (rec.trait) c.trait = rec.trait;
+  const nm = cleanName(rec.name) || nameFromTrait(rec.trait);
+  if (nm) { c.was = c.was || c.name; c.name = nm; }
+  c.test = {strength: rec.strength, fun: rec.fun, notes: rec.notes, looping: rec.looping};
+  return c;
+}
+function scoreBars(t) {
+  if (!t || t.strength == null) return '';
+  return `<div class="sfbars"><span title="strength: how clear its personality is (0-9, the judge)">💪</span><div class="bar"><i style="width:${t.strength / 9 * 100}%"></i></div><b>${t.strength.toFixed(1)}</b>
+    <span title="fun: how entertaining it is (0-9, the judge)">🤣</span><div class="bar fun"><i style="width:${t.fun / 9 * 100}%"></i></div><b>${t.fun.toFixed(1)}</b></div>`;
+}
 async function personalityTest(btn) {
   if (S.busy) return toast('The pug on stage is still talking; try again in a moment');
   btn.disabled = true;
   const out = $('#test-out'), c = B.child, look = lookOf(c);
-  out.innerHTML = `<div class="test-grid" style="--c:${look.color}"><div class="q muted">Plain Qwen vs ${esc(c.name)}, same questions:</div></div>`;
-  const grid = out.firstElementChild;
+  out.innerHTML = `<div class="test-grid" style="--c:${look.color}"><div class="q muted">Plain Qwen vs ${esc(c.name)}, same questions:</div></div><div id="test-verdict"></div>`;
+  const grid = out.firstElementChild, cells = {};
   setBusy(true);
   try {
-    for (const q of TEST_PROMPTS) {
-      grid.insertAdjacentHTML('beforeend', `<div class="q">“${esc(q)}”</div><div class="a">…</div><div class="a cr">…</div>`);
-      const cells = [...grid.querySelectorAll('.a')].slice(-2), txt = ['', ''];
-      await stream('/api/generate', {messages: [{role: 'user', content: q}], rows: [[], c.genes], think: false, temperature: 0.7, max_new_tokens: 110}, ev => {
-        if (ev.t === 'progress') cells[1].textContent = '☕ ' + ev.msg;
-        if (ev.t === 'tok') { txt[ev.row] = ev.text_full ?? txt[ev.row] + (ev.text || ''); cells[ev.row].textContent = txt[ev.row]; }
-        if (ev.t === 'error') cells[1].textContent = '⚠️ ' + ev.msg;
-      });
-    }
+    await stream('/api/test', {creatures: [c.genes.map(({layer, neuron, dose}) => ({layer, neuron, dose}))], seed: 1}, ev => {
+      if (ev.t === 'progress') grid.querySelector('.q').textContent = '☕ ' + ev.msg;
+      if (ev.t === 'test_q') {
+        if (!cells[ev.qi]) { grid.insertAdjacentHTML('beforeend', `<div class="q">“${esc(ev.q)}”</div><div class="a"></div><div class="a cr"></div>`); cells[ev.qi] = [...grid.querySelectorAll('.a')].slice(-2); }
+        cells[ev.qi][0].textContent = ev.plain; if (ev.replies['0'] !== undefined) cells[ev.qi][1].textContent = ev.replies['0'];
+      }
+      if (ev.t === 'tamed') toast('🔁 It looped, so the doses went down a notch and it answered again');
+      if (ev.t === 'test_creature') {
+        applyTest(c, ev);
+        $('#hatch-name').textContent = c.name;
+        $('#hatch-trait').innerHTML = `${c.was ? `was “${esc(c.was)}” · ` : ''}<b>${esc(c.trait || '')}</b>`;
+        $('#hatch-genes').innerHTML = genesChips(c);
+        $('#test-verdict').innerHTML = scoreBars(c.test) + (ev.notes || []).map(n => `<span class="chip mut">${esc(n)}</span>`).join('');
+      }
+      if (ev.t === 'error') toast('⚠️ ' + ev.msg, true);
+    });
   } catch (err) { toast(err.message, true); } finally { setBusy(false); btn.disabled = false; pollStatus(); }
+}
+
+// ---------------------------------------------------------------- evolve: hatch, test, judge, keep the best, repeat
+const EVO = {kids: 6, gens: 3};
+async function evolve() {
+  if (S.busy) return toast('Qwen is busy: wait for the reply or stop it first');
+  const body = $('#breed-body'), seed = Math.floor(Math.random() * 1e6);
+  body.dataset.view = 'evolve';
+  $('#breed-dlg').classList.add('wide');
+  B.evoStop = false; B.evo = [];
+  let pa = B.a, pb = B.b;
+  body.innerHTML = `<button class="x" data-act="close" aria-label="Close">✕</button><h2>🧬 Evolution</h2>
+    <p class="muted">${EVO.kids} children per generation · Qwen tests each, a blind judge scores 💪 strength + 🤣 fun · the best two breed the next generation · seed ${seed}</p>
+    <div id="evo-gens" class="evo-gens"></div><div class="row" id="evo-btns"><button class="btn" data-act="evo-stop">■ stop</button></div>`;
+  setBusy(true);
+  try {
+    for (let g = 1; g <= EVO.gens && !B.evoStop; g++) {
+      const row = document.createElement('div'); row.className = 'evo-row';
+      row.innerHTML = `<div class="evo-label">Gen ${g}<small>${esc(pa.name)} × ${esc(pb.name)}</small></div><div class="evo-kids">${'<div class="evo-kid egg-mini">🥚</div>'.repeat(EVO.kids)}</div>`;
+      $('#evo-gens').append(row); row.scrollIntoView({behavior: 'smooth', block: 'nearest'});
+      const kids = await Promise.all(Array.from({length: EVO.kids}, (_, i) =>
+        api('/api/breed', {method: 'POST', body: {a: pa, b: pb, mutation: Math.max(0.35, B.mutation), use_pool: B.usePool, seed: seed * 100 + g * 10 + i}})));
+      kids.forEach((k, i) => { k.id = `evo-${g}-${i}`; k.builtin = false; k.look = blendLook(k, pa, pb); k.idx = B.evo.length + i; });
+      B.evo.push(...kids);
+      const slots = [...row.querySelectorAll('.evo-kid')];
+      const draw = () => kids.forEach((k, i) => { slots[i].className = 'evo-kid' + (k.crown ? ' crown' : ''); slots[i].style.setProperty('--c', lookOf(k).color); slots[i].innerHTML = evoKidHtml(k, k.idx); });
+      draw();
+      await stream('/api/test', {creatures: kids.map(k => k.genes.map(({layer, neuron, dose}) => ({layer, neuron, dose}))), seed: seed + g, max_new_tokens: 90}, ev => {
+        if (ev.t === 'test_creature') { applyTest(kids[ev.i], ev); kids[ev.i].fit = (ev.strength || 0) + (ev.fun || 0) - (ev.looping ? 3 : 0); draw(); }
+        if (ev.t === 'test_q') slots.forEach(sl => sl.classList.add('thinking'));
+        if (ev.t === 'error') toast('⚠️ ' + ev.msg, true);
+      });
+      if (kids.some(k => k.fit === undefined)) break;
+      const best = [...kids].sort((x, y) => y.fit - x.fit).slice(0, 2);
+      best.forEach(k => { k.crown = true; });
+      draw();
+      confetti(innerWidth / 2, 200, 30);
+      [pa, pb] = best;
+    }
+  } catch (err) { toast(err.message, true); } finally { setBusy(false); pollStatus(); }
+  const champ = [...B.evo].filter(k => k.fit !== undefined).sort((x, y) => y.fit - x.fit)[0];
+  $('#evo-btns').innerHTML = champ ? `<span class="muted">🏆 champion: <b>${esc(champ.name)}</b> (gen ${champ.generation}, ${champ.fit.toFixed(1)} points). Tap any pug to talk to it or keep it.</span>
+    <button class="btn" data-act="back">↩ Other parents</button>` : '<button class="btn" data-act="back">↩ Other parents</button>';
+  if (champ) achieve(champ.generation >= 3 ? 'dynasty' : 'first-hatch');
+}
+function evoKidHtml(k, idx) {
+  const look = lookOf(k);
+  return `${k.crown ? '<span class="crown-badge">👑</span>' : ''}${pug(k, 'pet', look)}<b>${esc(k.name)}</b>
+    <small>${esc(k.trait || '')}</small>${k.test ? scoreBars(k.test) : '<small class="muted">testing…</small>'}
+    ${k.fit !== undefined ? `<div class="evo-acts"><button data-evo="${idx}" data-do="talk">💬</button><button data-evo="${idx}" data-do="keep">💾</button></div>` : ''}`;
+}
+async function evoPick(i, what) {
+  const k = B.evo[i]; if (!k) return;
+  if (what === 'talk') { $('#breed-dlg').close(); return possess(k, {intro: true}); }
+  if (what === 'keep') {
+    try { const saved = await api('/api/creatures', {method: 'POST', body: {...k, id: undefined, builtin: false}}); k.id = saved.id; toast(`🏡 ${saved.name} moved into your zoo`); achieve('collector'); await loadZoo(); }
+    catch (err) { toast(err.message, true); }
+  }
 }
 $('#btn-breed').addEventListener('click', () => openBreed());
 
@@ -786,10 +886,16 @@ $('#star').addEventListener('dblclick', () => { toast('boop! 🐽'); $('#star').
   renderRack();
   renderStar();
   try { await loadZoo(); } catch (err) { toast('Could not load the zoo: ' + err.message, true); }
+  const ctx = {S, api, stream, toast, confetti, pug, lookOf, possess, mixIn, onGenes, setBusy, pollStatus, loadZoo, svgImage, copyPng,
+    buzz, achieve, mix, wrapText, looping};
+  initDebugger(ctx); initShowdown(ctx); initCaveman(ctx);   // before initLab: it may open a saved tab
   await initLab({S, api, stream, toast, confetti, pug, lookOf, possess, mixIn, onGenes, setBusy, pollStatus, loadZoo, editCreature, openBreed,
     svgImage, copyPng, hex: c => String(c).startsWith('hsl') ? hslHex(c) : c,
     NEUTRAL: ['Tell me about your day.', 'What do you think of mornings?'],
+    buzz, achieve, mix, wrapText, looping,
     onScored: r => { if (B.child && r.who.star === B.child) B.child.score = {trait: r.trait, normal: r.normal, n: r.n, controls: r.controls, p: r.p, passed: r.passed, source: 'your lab', what: r.what}; }});
+  $('#btn-show').addEventListener('click', () => openShowdown());
+  $('#btn-cave').addEventListener('click', openCaveman);
   pollStatus();
   setInterval(pollStatus, 5000);
 })();
