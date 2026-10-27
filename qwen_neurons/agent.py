@@ -246,8 +246,10 @@ steer best). Mind the sign: a side − hit is written by a NEGATIVE dose.
 not it), fires or fires_on (input evidence), web (downstream).
 3. steer or compare the best on everyday prompts that don't mention the concept (the trait must show up uninvited); \
 zero_ablate or logprobs for detail.
-4. Before the verdict, write a prediction and run test_prediction (held-out neutral questions). The verdict reports \
-its result as measured.
+4. Before the verdict, write a prediction and run test_prediction (held-out neutral questions). Judge the behavior, \
+not the neuron's own lens tokens: keywords copied from the lens only prove the lens (a neuron that writes "hidden" \
+is not yet a conspiracy theorist), so for a persona give a trait sentence instead. The verdict reports the result \
+as measured.
 5. Call verdict: name, genes, trait, input evidence, direct effect, downstream effect, the test and its result, and \
 your confidence. Report what you saw, not what you hoped: a neuron that does nothing gets an honest verdict too.
 Only steer with genes you have looked at. Don't explain the tools to the user."""

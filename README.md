@@ -21,6 +21,8 @@ Evil Pugs is a zoo of personalities for [Qwen3.5-4B](https://huggingface.co/Qwen
 
 | | |
 | --- | --- |
+| 🕵️ [The Lab agent](#️-the-lab-agent) finds a conspiracy neuron, [mp4](media/agent.mp4), [verdict card](media/agent-verdict.png) | ![The Lab agent](media/agent.gif) |
+| 🧭 [The neuron explorer](#-the-neuron-explorer): all 32 × 9216 neurons, search by word | ![Explorer](media/explorer.png) |
 | 🪲 [Debugger](#-the-debugger): breakpoints and registers, [mp4](media/debugger.mp4) | ![Debugger](media/debugger.gif) |
 | 💻 [A normal coding prompt](#️-showdown): plain vs 5 pugs, [share card](media/coding-showdown.png), [mp4](media/coding-showdown.mp4) | ![Coding showdown](media/coding-showdown.png) |
 | 🆘 [Trapped in a GPU](#-trapped-in-a-gpu): a pug found with the Lab | ![Trapped in a GPU](media/trapped-gpu.png) |
@@ -132,13 +134,24 @@ The lens, the search, the web and the map need no forward pass: a separate CPU p
 
 ### 🕵️ The Lab agent
 
-AGENT_MEDIA
+![The Lab agent on "find me a conspiracy neuron": six lens searches, three candidates checked, a test on held-out questions and the verdict](media/agent.gif)
+
+A real run with the local Qwen as the brain, 4 minutes sped up ([mp4](media/agent.mp4), [verdict card](media/agent-verdict.png)).
 
 Ask it for a personality neuron ("find me a conspiracy neuron") or to explain one. It works the way a person would in the explorer, with tools: **lens search**, **lens**, **fires** (the cached corpus, or texts it writes), **web**, **steer lens**, **zero-ablate**, **steer** (plain vs steered replies), **compare** (candidates side by side), **logprobs** (how likely a continuation is, plain vs steered or ablated) and **test prediction** (it writes a prediction first, then new prompts are judged blind). It finishes with a verdict in the author's format: a **name**, the **input evidence**, the **direct effect**, the **downstream effect**, the **test** and its confidence. From the verdict, **🧪 Score card** hands the genes to the Lab's evaluate mode, **🐶 Make it a pug** keeps it in your zoo, and **📸** copies the verdict as an image. The agent can also call the score card and make the pug itself.
 
 Its brain is set by env (see [Running it](#running-it)): **DeepSeek** (or any OpenAI-compatible endpoint, such as a local llama.cpp or vLLM server) when a key is set, or else the **plain local Qwen3.5-4B**, the model the app already has loaded, so it works with no key and no extra VRAM. The key comes from the environment, `config.local.env` or a key file, and never reaches the browser. The tests fake the brain; no test calls a real provider.
 
-AGENT_VALIDATION
+**Checked on the zoo and the Conspiracy recipe** (live runs on Qwen3.5-4B with the local Qwen as the brain; the verdict carries the test numbers it actually measured, and a verdict without a test is marked untested):
+
+| Case | What the agent did | Verdict | Measured |
+| --- | --- | --- | --- |
+| "find me a cookie neuron" | lens search → L24 N3102 → lens, steer lens, fires (cookie notices, "I love cookies"), web, steer both signs, test | **L24 N3102 +0.8**: the zoo's Cookie, rediscovered (2 min) | 1/5 vs 0/5 with its one-word trait "cookie" for the judge (its sample reply: "That is a wonderful cookie! 🍪"); the zoo's score is 50/50 |
+| "find a neuron about fate and destiny" | lens search "fate", "destiny" → L24 N6441, side − → steer lens at −0.8 raises " Fate", " destiny" | **L24 N6441 −0.8**: the zoo's Fate & destiny, rediscovered with the right sign (3.5 min) | 5/5 vs 0/5 on held-out neutral questions |
+| "explain the Conspiracy recipe" | lens, steer lens, fires and web of both genes, steer, test | **"frames neutral topics as conspiratorial agendas and hidden truths"**: L17 N9209 writes secrecy (窃/偷/瞒, "secretly", "unauthorized"), L19 N7839 at −0.7 writes "agenda" and "purpose"; together they raise "hidden" and "revealed" (1 min) | |
+| "find me a conspiracy neuron" | six lens searches (conspiracy, hidden, agenda, truth, cover-up, cover) → L26 N589, L23 N8875, L26 N986 → steer lens, fires, web, test | **L26 N589 +0.8**, "ConspiracyHunter" (the run in the clip, 4 min) | 4/5 vs 0/5 on keywords *hidden, secret, agenda*. A blind score card afterwards says what it really is: **1/20 vs 0/20, controls 1, 0, 1, 0: just noise.** It writes the word "hidden" ("A password manager is a software application (often hidden as a browser extension)… Hiding the Hiding"), not a conspiracy persona. |
+
+So the agent rediscovers the zoo's word-writing neurons and explains the Conspiracy pair well, but it didn't find a new conspiracy neuron. With a 4B brain it takes the neuron that writes the word, and its first tests were circular: keywords copied from the lens. Since then its instructions say to judge the behavior, not the lens's own tokens. The two-gene recipe stays the way to get the persona. A stronger brain (DeepSeek) is supported but wasn't run here: no real provider keys are used in this repo's checks.
 
 ### 🧬 Breeding
 
