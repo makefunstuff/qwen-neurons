@@ -1,7 +1,7 @@
 """Breeding creatures. A creature's genes are its knobs: (layer, neuron, dose).
 
-A child gets a crossover of its parents' genes, a chance of mutation (a nudged dose, a neighbouring neuron or a
-random one on the same layer), clamped doses and a cap on the total push so children don't just loop. All
+A child gets a crossover of its parents' genes, a chance of mutation (a nudged dose, a neighbouring neuron, a
+random one on the same layer, or a gene from the gene pool of discovered candidates), clamped doses and a cap on the total push so children don't just loop. All
 randomness comes from the rng passed in, so a seeded breed is reproducible.
 """
 import random
@@ -52,25 +52,48 @@ def crossover(a: list[dict], b: list[dict], rng: random.Random) -> list[dict]:
     return genes
 
 
-def mutate(genes: list[dict], rng: random.Random, rate: float = 0.3) -> tuple[list[dict], list[str]]:
-    """Each gene mutates with p=rate: a nudged dose (most often), a neighbouring neuron, or a random neuron on
-    the same layer. Returns (genes, a list of what happened, for the hatch screen)."""
+def _pool_label(g: dict) -> str:
+    return f"L{g['layer']} N{g['neuron']}" + (f" ({g['label']})" if g.get("label") else "")
+
+
+def mutate(genes: list[dict], rng: random.Random, rate: float = 0.3,
+           pool: list[dict] | None = None) -> tuple[list[dict], list[str]]:
+    """Each gene mutates with p=rate: a nudged dose (most often), a neighbouring neuron, a random neuron on the same
+    layer or, with a gene pool, a swap for a discovered candidate. With a pool there is also a chance (rate / 2) of
+    a gift: a pool gene added on top. Returns (genes, a list of what happened, for the hatch screen)."""
+    pool = [p for p in (pool or []) if _key(p) not in {_key(g) for g in genes}]
+    kinds, weights = ["nudge", "neighbour", "random"], [6, 2, 1]
+    if pool:
+        kinds, weights = kinds + ["pool"], weights + [4]
     out, notes = [], []
     for g in genes:
         g = dict(g)
         if rng.random() < rate:
-            kind = rng.choices(["nudge", "neighbour", "random"], weights=[6, 2, 1])[0]
+            kind = rng.choices(kinds, weights=weights)[0]
             if kind == "nudge":
                 old = g["dose"]
                 g["dose"] = g["dose"] + rng.choice([-1, 1]) * rng.uniform(0.1, 0.3)
                 notes.append(f"L{g['layer']} N{g['neuron']}: dose {old:+.2f} → {g['dose']:+.2f}")
+            elif kind == "pool":
+                p = pool.pop(rng.randrange(len(pool)))
+                notes.append(f"L{g['layer']} N{g['neuron']} → {_pool_label(p)} from the gene pool")
+                g = {"layer": int(p["layer"]), "neuron": int(p["neuron"]), "dose": float(p["dose"])}
+                if not pool:
+                    kinds, weights = kinds[:3], weights[:3]
             else:
                 old = g["neuron"]
                 g["neuron"] = ((old + rng.choice([-1, 1]) * rng.randint(1, 3)) if kind == "neighbour"
                                else rng.randrange(N_NEURONS)) % N_NEURONS
                 notes.append(f"L{g['layer']}: neuron {old} → {g['neuron']} ({kind})")
         out.append(g)
-    return out, notes
+    if pool and len(out) < MAX_GENES and rng.random() < rate / 2:
+        p = pool.pop(rng.randrange(len(pool)))
+        out.append({"layer": int(p["layer"]), "neuron": int(p["neuron"]), "dose": float(p["dose"])})
+        notes.append(f"🎁 gift from the gene pool: {_pool_label(p)} {float(p['dose']):+.2f}")
+    merged: dict = {}  # a swap can land on a neuron the child already has: keep one copy
+    for g in out:
+        merged.setdefault(_key(g), g)
+    return list(merged.values()), notes
 
 
 PREFIXES = ["Lil'", "Sir", "Baron", "Dr.", "Captain", "Auntie", "Professor", "Count", "Tiny", "Big", "Lady", "Mister"]
@@ -100,11 +123,13 @@ def child_name(a: str, b: str, rng: random.Random) -> str:
     return core
 
 
-def breed(a: dict, b: dict, rng: random.Random | None = None, rate: float = 0.3) -> dict:
-    """Two creatures ({name, genes, generation?, id?}) -> a child creature (without id)."""
+def breed(a: dict, b: dict, rng: random.Random | None = None, rate: float = 0.3,
+          pool: list[dict] | None = None) -> dict:
+    """Two creatures ({name, genes, generation?, id?}) -> a child creature (without id). pool: discovered
+    candidates that mutations may draw from."""
     rng = rng or random.Random()
     genes = crossover(a["genes"], b["genes"], rng)
-    genes, notes = mutate(genes, rng, rate)
+    genes, notes = mutate(genes, rng, rate, pool)
     genes, capped = clamp_genes(genes)
     if not genes:  # everything cancelled out: keep the strongest parent gene, gently
         g = max(a["genes"] + b["genes"], key=lambda g: abs(g["dose"]))

@@ -1,5 +1,6 @@
 // Evil Pugs (qwen-neurons) frontend: the zoo, the stage (chat + knobs), breeding. No build step, no framework.
 import {generate, pugSvg, svgTag, mix, rng, INHERITED, RANDOM_GEAR, RANDOM_MOODS} from './pug.js';
+import {initLab, achieve, openEval, openFamily, refreshEval, showTab} from './lab.js';
 
 const $ = s => document.querySelector(s);
 const esc = s => String(s).replace(/[&<>"']/g, c => ({'&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'}[c]));
@@ -31,7 +32,7 @@ function lookOf(c) {
   const known = [...genes].sort((a, b) => Math.abs(b.dose) - Math.abs(a.dose)).map(g => S.geneInfo[geneKey(g)]).filter(Boolean);
   const seed = c.builtin ? c.id : (c.look?.seed || geneSeed(c.genes || []));
   const r = rng('look:' + seed);
-  let gear = [...new Set(known.flatMap(k => k.gear))];
+  let gear = c.look?.gear ? [...c.look.gear] : [...new Set(known.flatMap(k => k.gear))];
   const pins = {...(c.look?.pins || {})};
   if (gear.includes('catears')) pins.ears = 'perky';
   if (gear.includes('bow')) { pins.accessory = 'bow'; pins.accessoryColor = '#ff5fa2'; gear = gear.filter(g => g !== 'bow'); }
@@ -132,7 +133,13 @@ function scoreHtml(c) {
   }
   if (c.builtin) return `<div class="lineage">the original villain · loops a lot</div>`;
   const par = c.parent_names?.length ? `${esc(c.parent_names[0])} × ${esc(c.parent_names[1])}` : 'hand-mixed';
-  return `<div class="lineage">Gen ${c.generation || 0} · ${par}${c.rating ? ' · ' + '★'.repeat(c.rating) : ''}</div>`;
+  const line = `<div class="lineage">Gen ${c.generation || 0} · ${par}${c.rating ? ' · ' + '★'.repeat(c.rating) : ''}</div>`;
+  if (c.score && Number.isFinite(c.score.trait) && c.score.n) {
+    const p = c.score.trait / c.score.n * 100;
+    return `<div class="score lab-score" title="${esc(c.score.source || 'your lab')}${c.score.what ? ': ' + esc(c.score.what) : ''}"><b>${c.score.trait}<small>/${c.score.n}</small></b>${c.score.passed ? ' <span class="cert" title="passed the zoo\'s bar">📜</span>' : ''}
+      <div class="bar"><i style="width:${p}%"></i></div><div class="normal">normal: ${c.score.normal}/${c.score.n} · lab</div></div>${line}`;
+  }
+  return line;
 }
 function renderZoo() {
   const grid = $('#zoo-grid');
@@ -221,6 +228,7 @@ function renderStar(pop = false) {
   const on = onGenes();
   $('#star-sub').textContent = on.length ? (S.star.trait ? `${S.star.trait} · ` : '') + on.map(geneLabel).join(' · ') : 'no knobs: the normal model';
   $('#logo').innerHTML = pug(c, 'pet', look);
+  refreshEval();
 }
 
 // ---- knobs
@@ -255,7 +263,7 @@ function renderRack() {
       <div class="kbtns"><button data-act="toggle" title="${g.on === false ? 'Switch on' : 'Switch off'}">${g.on === false ? '○' : '●'}</button><button data-act="rm" title="Remove">✕</button></div>${stats}</div>`;
   }).join('');
   rack.innerHTML = `<div class="rack-top"><span class="rack-title">knobs on</span>${chaosHtml()}
-      ${S.genes.length ? '<button data-act="keep" title="Save this creature to your zoo">💾 keep</button><button data-act="clear" title="Back to plain Qwen">🧼 clear</button>' : ''}</div>
+      ${S.genes.length ? '<button data-act="score" title="Score these knobs the zoo\'s way in the Lab">🧪 score</button><button data-act="keep" title="Save this creature to your zoo">💾 keep</button><button data-act="clear" title="Back to plain Qwen">🧼 clear</button>' : ''}</div>
     ${knobs || '<div class="empty-rack">No knobs. Tap a pug, or add a neuron by hand ↓</div>'}
     <form class="add-gene" data-act="add">add neuron: L<input name="layer" type="number" min="0" max="31" value="14" aria-label="layer">
       N<input name="neuron" type="number" min="0" max="9215" value="8949" aria-label="neuron">
@@ -287,6 +295,7 @@ $('#rack').addEventListener('click', e => {
   if (act === 'toggle') S.genes[i].on = S.genes[i].on === false;
   else if (act === 'rm') S.genes.splice(i, 1);
   else if (act === 'clear') return possess(PLAIN);
+  else if (act === 'score') return openEval(S.star.trait);
   else if (act === 'keep') return editCreature({...starCreature(), id: undefined, builtin: false, name: S.star.id === 'mix' || S.star.builtin ? S.star.name + (S.star.builtin ? ' (custom)' : '') : S.star.name});
   else if (act === 'tame') {
     const c = chaos(), f = (S.zones.child_cap) / c;
@@ -398,10 +407,10 @@ async function send(text) {
         b.el.innerHTML = mdLite(b.text);
         const loop = looping(b.text) || (ev.reason === 'length' && looping(b.text + b.think));
         b.meta.innerHTML = `<span>${ev.tokens} tok</span>${ev.reason === 'length' ? '<span>✂️ cut</span>' : ''}${ev.reason === 'stopped' ? '<span>■ stopped</span>' : ''}${loop ? '<span class="loop">🔁 stuck in a loop</span>' : ''}`;
-        if (loop && ev.row === steeredRow && genes.length) setTimeout(() => toast('🔁 Looping: turn the knobs down a bit (or hit 🧯 tame)'), 300);
+        if (loop && ev.row === steeredRow && genes.length) { setTimeout(() => toast('🔁 Looping: turn the knobs down a bit (or hit 🧯 tame)'), 300); achieve('loop'); }
         if (ev.row === steeredRow) $('#star').classList.remove('talking');
       } else if (ev.t === 'finished') {
-        ok = true;
+        ok = true; achieve('first-words');
         const b = bubbles[steeredRow];
         b.meta.insertAdjacentHTML('beforeend', `<span>${ev.tok_s} tok/s</span>`);
         if (sbs) {
@@ -494,6 +503,7 @@ function editCreature(c) {
   dlg.onclose = async () => {
     if (dlg.returnValue !== 'ok') return;
     const fd = new FormData(f);
+    if (c.score && c.genes && String(fd.get('genes')).trim() !== c.genes.map(g => `${g.layer} ${g.neuron} ${g.dose}`).join('\n')) c = {...c, score: undefined};  // new genes, old score: drop it
     const genes = String(fd.get('genes')).split('\n').map(l => l.trim().split(/[\s,:]+/).map(Number)).filter(x => x.length === 3 && x.every(Number.isFinite))
       .map(([layer, neuron, dose]) => ({layer, neuron, dose}));
     try {
@@ -508,10 +518,11 @@ function editCreature(c) {
 }
 
 // ---------------------------------------------------------------- breeding
-const B = {a: null, b: null, child: null, mutation: 0.3};
-function openBreed() {
+const B = {a: null, b: null, child: null, mutation: 0.3, usePool: true, pool: []};
+async function openBreed(parent) {
   const zooOnes = S.creatures;
-  if (!B.a && S.star.id !== 'plain') B.a = S.star.genes?.length ? starCreature() : null;
+  if (parent) { B.a = parent; B.b = null; } else if (!B.a && S.star.id !== 'plain') B.a = S.star.genes?.length ? starCreature() : null;
+  try { B.pool = await api('/api/genepool'); } catch { B.pool = []; }
   renderBreedPick(zooOnes);
   $('#breed-dlg').showModal();
 }
@@ -530,6 +541,7 @@ function renderBreedPick(list) {
       return `<button data-i="${i}" class="${sel ? 'sel' : ''}" style="--c:${look.color}">${pug(c, 'pet', look)}${esc(c.name)}</button>`;
     }).join('')}</div>
     <div class="row"><label class="muted">mutation chance <input type="range" min="0" max="1" step="0.05" value="${B.mutation}" data-act="mut"> <b>${Math.round(B.mutation * 100)}%</b></label>
+      <label class="muted" title="${B.pool.length ? 'Mutations can swap a gene for a neuron you discovered in the Lab, or add one as a gift' : 'Empty: add discovered neurons with 🧬 in the Lab'}"><input type="checkbox" data-act="pool" ${B.usePool ? 'checked' : ''} ${B.pool.length ? '' : 'disabled'}> 🧬 gene pool (${B.pool.length})</label>
       <span style="flex:1"></span><button class="btn" data-act="rand">🎲 random parents</button>
       <button class="cta" data-act="hatch" ${B.a && B.b ? '' : 'disabled style="opacity:.5"'}>🥚 Hatch!</button></div>`;
   body.dataset.view = 'pick';
@@ -537,6 +549,7 @@ function renderBreedPick(list) {
 }
 $('#breed-body').addEventListener('input', e => {
   if (e.target.dataset.act === 'mut') { B.mutation = +e.target.value; e.target.nextElementSibling.textContent = Math.round(B.mutation * 100) + '%'; }
+  if (e.target.dataset.act === 'pool') B.usePool = e.target.checked;
 });
 $('#breed-body').addEventListener('click', async e => {
   const b = e.target.closest('button'); if (!b) return;
@@ -560,6 +573,8 @@ $('#breed-body').addEventListener('click', async e => {
   if (act === 'talk') { $('#breed-dlg').close(); return possess(B.child, {intro: true}); }
   if (act === 'keep') return keepChild(b);
   if (act === 'test') return personalityTest(b);
+  if (act === 'score') { $('#breed-dlg').close(); possess(B.child, {quiet: true}); return openEval(B.child.trait); }
+  if (act === 'family') { if (!B.child.id || B.child.id === 'hatchling') return toast('💾 Keep it first, then it gets a family tree'); $('#breed-dlg').close(); return openFamily(B.child.id); }
   if (b.dataset.star) { B.child.rating = +b.dataset.star; [...b.parentElement.children].forEach((s, i) => s.classList.toggle('on', i < B.child.rating)); }
 });
 
@@ -580,7 +595,7 @@ async function hatch() {
   let child;
   try {
     [child] = await Promise.all([
-      api('/api/breed', {method: 'POST', body: {a: B.a, b: B.b, mutation: B.mutation}}),
+      api('/api/breed', {method: 'POST', body: {a: B.a, b: B.b, mutation: B.mutation, use_pool: B.usePool}}),
       new Promise(r => setTimeout(r, 1300)),
     ]);
   } catch (err) { toast(err.message, true); return renderBreedPick(B.list); }
@@ -591,6 +606,9 @@ async function hatch() {
   child = {...child, id: 'hatchling', builtin: false};
   child.look = blendLook(child, B.a, B.b);
   B.child = child;
+  achieve('first-hatch');
+  if (child.generation >= 3) achieve('dynasty');
+  if (child.generation >= 5) achieve('dynasty5');
   const look = lookOf(child), rect = body.getBoundingClientRect();
   confetti(rect.left + rect.width / 2, rect.top + 160, 80);
   buzz([20, 40, 20]);
@@ -604,7 +622,8 @@ async function hatch() {
       <div class="chips">${(child.mutations || []).map(m => `<span class="chip mut">🧬 ${esc(m)}</span>`).join('') || '<span class="muted">no mutations: a pure blend</span>'}</div>
       <div class="row" style="justify-content:center;margin-top:6px">
         <button class="cta" data-act="talk">💬 Talk to it</button><button class="btn" data-act="keep">💾 Keep in zoo</button>
-        <button class="btn" data-act="test">🧪 Personality test</button><button class="btn" data-act="again">🔁 Hatch another</button>
+        <button class="btn" data-act="test">🧪 Personality test</button><button class="btn" data-act="score" title="A full score card in the Lab">🔬 Score it</button>
+        <button class="btn" data-act="family">🌳 Family tree</button><button class="btn" data-act="again">🔁 Hatch another</button>
         <button class="btn" data-act="back">↩ Other parents</button></div>
       <div class="stars row" style="justify-content:center;margin-top:6px"><span class="muted">rate it</span>${[1, 2, 3, 4, 5].map(i => `<button data-star="${i}" aria-label="${i} stars">⭐</button>`).join('')}</div>
       <div id="test-out" style="width:100%"></div></div>`;
@@ -615,6 +634,7 @@ async function keepChild(btn) {
     const saved = await api('/api/creatures', {method: 'POST', body: {...c, id: undefined, builtin: false}});
     btn.textContent = '✅ kept'; btn.disabled = true;
     B.child = {...c, id: saved.id};
+    achieve('collector');
     toast(`🏡 ${saved.name} moved into your zoo`);
     await loadZoo();
     const fresh = S.creatures.find(x => x.id === saved.id); if (fresh) { fresh.fresh = true; renderZoo(); }
@@ -639,7 +659,7 @@ async function personalityTest(btn) {
     }
   } catch (err) { toast(err.message, true); } finally { setBusy(false); btn.disabled = false; pollStatus(); }
 }
-$('#btn-breed').addEventListener('click', openBreed);
+$('#btn-breed').addEventListener('click', () => openBreed());
 
 // ---------------------------------------------------------------- spin the wheel
 $('#btn-spin').addEventListener('click', async () => {
@@ -674,11 +694,12 @@ $('#btn-spin').addEventListener('click', async () => {
   addDivider(`🎰 the wheel says: <b>${esc(a.name)} × ${esc(b.name)}</b>`, lookOf(starCreature()).color);
   confetti(innerWidth * 0.75, 120, 40);
   S.spinning = false;
+  achieve('gambler');
   if (!S.busy) send(PROMPTS[Math.floor(Math.random() * PROMPTS.length)]);
 });
 
 // ---------------------------------------------------------------- share card (canvas → PNG)
-async function svgImage(c, look, size, bg) {
+async function svgImage(look, size, bg) {
   const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${size}" height="${size}" viewBox="0 0 100 100">${pugSvg(look.traits, {mood: look.mood, gear: look.gear, bg})}</svg>`;
   const img = new Image();
   img.src = 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(svg.replace(/var\(--pug-bg, #fff\)/g, bg));
@@ -714,7 +735,7 @@ async function shareCard(question, normal, steered, c, look) {
     const cx = 48 + i * 564, cy = 136, cw = 540, ch = 470;
     x.fillStyle = '#ffffff'; x.strokeStyle = col.color; x.lineWidth = 4;
     x.beginPath(); x.roundRect(cx, cy, cw, ch, 28); x.fill(); x.stroke();
-    const img = await svgImage(c, col.look, 84, mix(col.color, '#ffffff', 0.72));
+    const img = await svgImage(col.look, 84, mix(col.color, '#ffffff', 0.72));
     x.drawImage(img, cx + 20, cy + 18, 84, 84);
     x.fillStyle = '#1d1a22'; x.font = '800 28px "Bricolage Grotesque", system-ui'; x.fillText(col.name.slice(0, 26), cx + 118, cy + 56);
     x.font = '500 15px "JetBrains Mono", monospace'; x.fillStyle = '#6f6878';
@@ -724,13 +745,17 @@ async function shareCard(question, normal, steered, c, look) {
   }
   x.font = '600 18px "JetBrains Mono", monospace'; x.fillStyle = '#6f6878';
   x.fillText('Evil Pugs · neuron steering on Qwen3.5-4B · github.com/makefunstuff/qwen-neurons', 48, H - 30);
+  await copyPng(cv, `evil-pugs-${(c.name || 'pug').replace(/\W+/g, '-').toLowerCase()}.png`);
+  achieve('paparazzi');
+}
+async function copyPng(cv, filename) {
   const blob = await new Promise(r => cv.toBlob(r, 'image/png'));
   try {
     await navigator.clipboard.write([new ClipboardItem({'image/png': blob})]);
     toast('📸 Copied as an image: paste it anywhere');
   } catch {
     const a = document.createElement('a');
-    a.href = URL.createObjectURL(blob); a.download = `evil-pugs-${(c.name || 'pug').replace(/\W+/g, '-').toLowerCase()}.png`; a.click();
+    a.href = URL.createObjectURL(blob); a.download = filename; a.click();
     toast('📸 Saved as a PNG');
   }
 }
@@ -742,7 +767,7 @@ addEventListener('keydown', e => {
   kpos = e.key === KONAMI[kpos] ? kpos + 1 : (e.key === KONAMI[0] ? 1 : 0);
   if (kpos === KONAMI.length) {
     kpos = 0; document.body.classList.toggle('party');
-    if (document.body.classList.contains('party')) { confetti(innerWidth / 2, innerHeight / 3, 120); toast('🎉 PUG PARTY'); }
+    if (document.body.classList.contains('party')) { confetti(innerWidth / 2, innerHeight / 3, 120); toast('🎉 PUG PARTY'); achieve('party'); }
   }
 });
 let logoClicks = 0;
@@ -760,6 +785,10 @@ $('#star').addEventListener('dblclick', () => { toast('boop! 🐽'); $('#star').
   renderRack();
   renderStar();
   try { await loadZoo(); } catch (err) { toast('Could not load the zoo: ' + err.message, true); }
+  await initLab({S, api, stream, toast, confetti, pug, lookOf, possess, mixIn, onGenes, setBusy, pollStatus, loadZoo, editCreature, openBreed,
+    svgImage, copyPng, hex: c => String(c).startsWith('hsl') ? hslHex(c) : c,
+    NEUTRAL: ['Tell me about your day.', 'What do you think of mornings?'],
+    onScored: r => { if (B.child && r.who.star === B.child) B.child.score = {trait: r.trait, normal: r.normal, n: r.n, controls: r.controls, p: r.p, passed: r.passed, source: 'your lab', what: r.what}; }});
   pollStatus();
   setInterval(pollStatus, 5000);
 })();

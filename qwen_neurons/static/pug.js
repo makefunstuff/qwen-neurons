@@ -180,6 +180,13 @@ function gearSvg(g, ctx) {
       return {back: strokePath(`M50 ${n(top + 4)}Q46 ${n(top - 8)} 52 ${n(top - 16)}`, '#555', 2) + circle(52, top - 17, 3.5, '#3dd68c')};
     case 'leaf':
       return {head: line(50, top + 2, 50, top - 8, '#2fb574', 2.2) + fillPath(`M50 ${n(top - 6)}Q40 ${n(top - 16)} 35 ${n(top - 10)}Q43 ${n(top - 3)} 50 ${n(top - 6)}Z`, '#3dd68c')};
+    case 'eyepatch':
+      return {head: line(50 - rx + 2, eyeCy - 10, 50 + rx - 2, eyeCy - 4, INK, 1.6) + oval(eyeLx, eyeCy, 7.5, 6.5, INK) +
+        tri(36, top + 6, 50, top - 14, 64, top + 6, '#2b2b33') + oval(50, top + 5, 24, 4.5, '#2b2b33') + circle(50, top - 3, 2.6, '#f4f1ea')};
+    case 'goggles':
+      return {head: rect(50 - rx + 1, eyeCy - 3, rx * 2 - 2, 5, 2.5, '#6b4a2b') + ring(eyeLx, eyeCy, 7, '#c9a227', 3) +
+        ring(eyeRx, eyeCy, 7, '#c9a227', 3) + circle(eyeLx, eyeCy, 5.5, '#9ee7ff', ' opacity="0.45"') +
+        circle(eyeRx, eyeCy, 5.5, '#9ee7ff', ' opacity="0.45"')};
     case 'partyhat':
       return {head: tri(38, top + 5, 54, top - 26, 64, top + 3, '#8e4ec6') + line(43, top - 2, 59, top - 5, GOLD, 2.4) +
         line(48, top - 12, 57, top - 14, GOLD, 2.4) + circle(54, top - 27, 4, '#ff8fa3')};

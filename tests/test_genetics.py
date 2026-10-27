@@ -58,3 +58,33 @@ def test_breed_is_reproducible_and_under_the_cap():
 def test_child_names_are_portmanteaus():
     name = child_name("Cookie", "Tears", random.Random(0))
     assert any(part in name for part in ("Coo", "Cook")) or "ars" in name or "ears" in name
+
+
+POOL = [{"layer": 20, "neuron": 77, "dose": 0.5, "label": "pirate"}, {"layer": 9, "neuron": 1, "dose": -0.4}]
+
+
+def test_mutations_draw_from_the_gene_pool():
+    seen_swap = seen_gift = False
+    for seed in range(200):
+        genes, notes = mutate(EVIL["genes"], random.Random(seed), rate=1.0, pool=POOL)
+        keys = [(g["layer"], g["neuron"]) for g in genes]
+        assert len(keys) == len(set(keys))
+        seen_swap |= any("from the gene pool" in n for n in notes)
+        seen_gift |= any("gift" in n for n in notes)
+        for n in notes:
+            if "pirate" in n:
+                assert (20, 77) in keys
+    assert seen_swap and seen_gift
+
+
+def test_no_pool_no_pool_mutations():
+    for seed in range(100):
+        _, notes = mutate(EVIL["genes"], random.Random(seed), rate=1.0)
+        assert not any("pool" in n for n in notes)
+
+
+def test_breed_with_pool_stays_capped():
+    for seed in range(100):
+        child = breed(COOKIE, EVIL, random.Random(seed), rate=0.9, pool=POOL)
+        assert sum(abs(g["dose"]) for g in child["genes"]) <= CHILD_CAP + 0.02
+        assert len(child["genes"]) <= 4

@@ -63,3 +63,60 @@ def test_generate_validates(client):
     bad = client.post("/api/generate", json={"messages": [{"role": "user", "content": "hi"}],
                                              "rows": [[{"layer": 1, "neuron": 2, "dose": 5}]]})
     assert bad.status_code == 422
+
+
+def test_sets_and_genepool(client):
+    sets = client.get("/api/sets").json()
+    assert any(s["id"] == "pirate" for s in sets)
+    s = client.post("/api/sets", json={"name": "Robots", "texts": ["beep", "boop"]}).json()
+    assert client.delete("/api/sets/villain").status_code == 403
+    assert client.delete(f"/api/sets/{s['id']}").status_code == 200
+    pool = client.post("/api/genepool", json=[{"layer": 3, "neuron": 4, "dose": 0.5, "label": "pirate"}]).json()
+    assert pool[0]["neuron"] == 4
+    assert client.post("/api/genepool", json=[{"layer": 33, "neuron": 4, "dose": 0.5}]).status_code == 400
+    assert client.delete("/api/genepool/3/4").json() == []
+
+
+def test_discover_job(client):
+    r = client.post("/api/discover", json={"a": "pirate", "b": "normal", "layers": [3, 1, 3], "metric": "d"})
+    assert r.status_code == 200
+    job = client.seen[-1]
+    assert job["kind"] == "discover" and job["layers"] == [1, 3] and len(job["a"]) == 12
+    assert job["questions"]
+    r = client.post("/api/discover", json={"a": ["arr", "ahoy matey"], "b": "nope"})
+    assert r.status_code == 404
+    assert client.post("/api/discover", json={"a": ["only one"]}).status_code == 400
+
+
+def test_evaluate_job(client):
+    body = {"genes": [{"layer": 24, "neuron": 3102, "dose": 0.8}], "trait": "talks about cookies", "n": 10}
+    assert client.post("/api/evaluate", json=body).status_code == 200
+    job = client.seen[-1]
+    assert job["kind"] == "evaluate" and len(job["questions"]) == 10 and job["controls"] == 4
+    assert client.post("/api/evaluate", json={**body, "trait": ""}).status_code == 400
+    assert client.post("/api/evaluate", json={**body, "trait": "", "judge": {"kind": "keywords", "keywords": ["cookie"]}}).status_code == 200
+    assert client.post("/api/evaluate", json={**body, "judge": {"kind": "keywords"}}).status_code == 400
+    assert client.post("/api/evaluate", json={**body, "genes": [{"layer": 1, "neuron": 1, "dose": 0}]}).status_code == 400
+
+
+def test_breed_keeps_a_family_snapshot(client):
+    zoo = {c["id"]: c for c in client.get("/api/creatures").json()}
+    child = client.post("/api/breed", json={"a": zoo["cookie"], "b": zoo["evil-qwen"], "seed": 1}).json()
+    kept = client.post("/api/creatures", json={**child, "name": "Kid"}).json()
+    hatch = {**child, "id": "hatchling", "name": "Unsaved"}
+    grand = client.post("/api/breed", json={"a": kept, "b": hatch, "seed": 2}).json()
+    assert grand["generation"] == 2
+    assert grand["parents"] == [kept["id"], None]
+    names = [p["name"] for p in grand["ancestry"]]
+    assert names == ["Kid", "Unsaved"]
+    assert {p["name"] for p in grand["ancestry"][0]["parents"]} == {"Cookie", "Evil Qwen"}
+
+
+def test_screen_job(client):
+    body = {"candidates": [{"layer": 10, "neuron": 5, "dose": 0.8}, {"layer": 12, "neuron": 6, "dose": -0.8}],
+            "trait": "talks like a pirate"}
+    assert client.post("/api/screen", json=body).status_code == 200
+    job = client.seen[-1]
+    assert job["kind"] == "screen" and job["candidates"] == [[body["candidates"][0]], [body["candidates"][1]]]
+    assert len(job["questions"]) == 3
+    assert client.post("/api/screen", json={**body, "candidates": []}).status_code == 422

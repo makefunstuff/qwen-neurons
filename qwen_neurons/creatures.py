@@ -117,6 +117,29 @@ def clean(c: dict) -> dict:
     if not genes:
         raise ValueError("a creature needs at least one gene")
     out = {k: v for k, v in c.items() if k in {"id", "trait", "parents", "parent_names", "generation", "mutations",
-                                              "rating", "created", "look", "test", "note"}}
+                                              "rating", "created", "look", "test", "note", "ancestry", "score"}}
+    if len(json.dumps(out)) > 200_000:
+        raise ValueError("creature too large")
     out.update(name=name, genes=genes, builtin=False)
     return out
+
+
+def ancestry_node(c: dict, zoo: "Zoo | None", depth: int = 5) -> dict:
+    """A snapshot of a creature and its ancestors for the family tree, so the tree survives deleted ancestors.
+    Parents come from the creature's own snapshot if it has one, else from the zoo by id."""
+    node = {k: c.get(k) for k in ("id", "name", "genes", "generation", "builtin", "look", "trait")}
+    node["parents"] = []
+    if depth <= 0:
+        return node
+    if c.get("ancestry"):
+        node["parents"] = [prune(p, depth - 1) for p in c["ancestry"]]
+    elif zoo is not None:
+        for pid in c.get("parents") or []:
+            p = zoo.get(pid) if pid else None
+            if p:
+                node["parents"].append(ancestry_node(p, zoo, depth - 1))
+    return node
+
+
+def prune(node: dict, depth: int) -> dict:
+    return {**node, "parents": [] if depth <= 0 else [prune(p, depth - 1) for p in node.get("parents") or []]}

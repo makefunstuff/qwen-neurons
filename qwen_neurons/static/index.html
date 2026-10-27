@@ -19,6 +19,7 @@
   </div>
   <div class="top-right">
     <button class="pill" id="status" title="Model status">💤 napping</button>
+    <button class="ghost" id="btn-ach" title="Achievements">🏅</button>
     <button class="ghost" id="btn-sleep" title="Unload the model and free the VRAM now">😴 Nap</button>
     <button class="ghost icon" id="btn-theme" title="Light / dark">🌓</button>
   </div>
@@ -26,6 +27,8 @@
 
 <main class="game">
   <section class="zoo" aria-label="The Neuron Zoo">
+    <nav class="tabs" aria-label="Sections"><button data-tab="zoo" class="on">🐶 Zoo</button><button data-tab="lab">🔬 Lab</button><button data-tab="family">🌳 Family</button></nav>
+    <div class="pane" id="pane-zoo">
     <div class="zoo-head">
       <div>
         <p class="kicker">Qwen3.5-4B · one neuron each</p>
@@ -43,6 +46,9 @@
       <a href="https://x.com/_lyraaaa_" target="_blank" rel="noopener">Qwen Neuron Zoo by @_lyraaaa_</a>.
       <code>L24 N3102 +0.8</code> = layer 24, neuron 3102, pushed up by 0.8× the layer's typical residual size on every token.
     </p>
+    </div>
+    <div class="pane" id="pane-lab" hidden></div>
+    <div class="pane" id="pane-family" hidden></div>
   </section>
 
   <section class="stage" id="stage" aria-label="Chat">
@@ -77,6 +83,12 @@
 </dialog>
 <dialog id="edit-dlg" class="dlg small">
   <form class="dlg-body" id="edit-form" method="dialog"></form>
+</dialog>
+<dialog id="set-dlg" class="dlg small">
+  <form class="dlg-body" id="set-form" method="dialog"></form>
+</dialog>
+<dialog id="ach-dlg" class="dlg small">
+  <div class="dlg-body" id="ach-body"></div>
 </dialog>
 <div id="toasts" class="toasts" aria-live="polite"></div>
 <div id="fx" class="fx" aria-hidden="true"></div>
