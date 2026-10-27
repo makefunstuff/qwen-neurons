@@ -40,7 +40,8 @@ SCENARIOS = [
      "scene": "a late-night talk show taping in front of a live studio audience. Genki cute is the host.",
      "guests": ["genki", "trapped-gpu", "fate"], "host": "genki",
      "roles": {"genki": "the host", "trapped-gpu": "tonight's first guest", "fate": "the second guest"},
-     "opener": "Good evening and welcome to the show! My first guest tonight says they live inside a GPU. Tell us everything!"},
+     "opener": "Good evening and welcome to the show! My first guest tonight, Trapped in a GPU, says they live inside a "
+               "graphics card. Tell us everything!"},
     {"id": "heist", "emoji": "💰", "title": "Heist planning meeting",
      "scene": "a secret heist planning meeting in a basement. The target: the cookie jar at the top of the GPU factory.",
      "guests": ["evil-qwen", "naruto", "cookie", "sleepy"], "host": "evil-qwen",
@@ -87,10 +88,13 @@ def next_speaker(guests: list[dict], transcript: list[dict], rng: random.Random,
                  chaos: float = 0.5) -> str:
     """Who talks next.
 
-    1. Nobody spoke yet: the host, else the first guest.
-    2. The last line names a guest (not the one who said it): that guest answers.
-    3. A host gets every other turn.
-    4. Otherwise the guest who has been quiet the longest; with more chaos, sometimes anyone at random.
+    1. Nobody spoke yet: a guest named by the human or narrator, else the host, else the first guest.
+    2. The human or the narrator named a guest: that guest answers.
+    3. A guest left out for a whole round (as many pug turns as there are guests) gets the floor, so a host and the
+       one it keeps addressing can't hog the party.
+    4. The last pug named another guest: that guest answers.
+    5. A host gets every other turn.
+    6. Otherwise the guest who has been quiet the longest; with more chaos, sometimes anyone at random.
     The same pug never talks twice in a row (unless it is alone)."""
     ids = [g["id"] for g in guests]
     if not ids:
@@ -100,26 +104,25 @@ def next_speaker(guests: list[dict], transcript: list[dict], rng: random.Random,
     said = [t for t in transcript if t.get("kind") == "pug"]
     last = transcript[-1] if transcript else None
     last_pug = said[-1]["who"] if said else None
+    named = [i for i in mentioned(last["text"], guests) if i != last.get("who")] if last else []
+    if last and last.get("kind") in ("human", "narrator") and named:
+        return named[0]
     if not said:
-        if last and last.get("kind") in ("human", "narrator"):
-            named = mentioned(last["text"], guests)
-            if named:
-                return named[0]
         return host if host in ids else ids[0]
-    if last is not None:
-        named = [i for i in mentioned(last["text"], guests) if i != last.get("who")]
-        if named:
-            return named[0]
-    if host in ids and last_pug != host:
-        return host
     others = [i for i in ids if i != last_pug]
-    if chaos > 0.5 and rng.random() < (chaos - 0.5):
-        return rng.choice(others)
     last_turn = {i: -1 for i in ids}
     for n, t in enumerate(said):
         if t["who"] in last_turn:
             last_turn[t["who"]] = n
     quiet = min(last_turn[i] for i in others)
+    if len(said) - 1 - quiet >= len(ids):
+        return rng.choice([i for i in others if last_turn[i] == quiet])
+    if named:
+        return named[0]
+    if host in ids and last_pug != host:
+        return host
+    if chaos > 0.5 and rng.random() < (chaos - 0.5):
+        return rng.choice(others)
     return rng.choice([i for i in others if last_turn[i] == quiet])
 
 
@@ -177,7 +180,8 @@ def chaos_temperature(chaos: float) -> float:
 def cut_reply(text: str, me: dict, guests: list[dict]) -> tuple[str, bool]:
     """Clean a reply: drop a leading 'MyName:' and cut where the pug starts writing someone else's line
     ('\nCookie:', 'Human:', '[Narrator'). Returns (text, was_cut)."""
-    t = re.sub(r"^\s*" + re.escape(me["name"]) + r"\s*:\s*", "", text, flags=re.I)
+    mine = [me["name"]] + [w for w in me["name"].split() if len(w) >= 3]   # 'Evil Qwen:' or just 'Qwen:'
+    t = re.sub(r"^\s*(?:\*\*)?(?:" + "|".join(map(re.escape, mine)) + r")(?:\*\*)?\s*:\s*", "", text, flags=re.I)
     names = [g["name"] for g in guests if g["id"] != me["id"]] + ["Human", "Narrator", "Audience"]
     pat = r"(?:^|\n)\s*(?:\*\*)?(?:" + "|".join(re.escape(n) for n in names) + r")(?:\*\*)?\s*(?:\([^)]*\))?\s*:"
     m = re.search(pat, t, re.I)
@@ -193,18 +197,34 @@ def _words(s: str) -> set[str]:
     return set(re.findall(r"\w+", s.lower()))
 
 
-def is_stuck(text: str, previous: list[str]) -> bool:
-    """A pug is stuck when its reply loops, or it says (nearly) the same thing as one of its last two lines."""
+def is_stuck(text: str, previous: list[str], recent: list[str] | None = None) -> bool:
+    """A pug is stuck when its reply loops (or a 5-word phrase comes back four times), says (nearly) the same as one
+    of its own last two lines, or parrots one of the last two lines of the conversation."""
     if looping(text):
+        return True
+    seq = re.findall(r"\w+", text.lower())
+    grams = [tuple(seq[i:i + 5]) for i in range(len(seq) - 4)]
+    if grams and max(grams.count(g) for g in set(grams)) >= 4:   # a phrase going round and round
         return True
     w = _words(text)
     if len(w) < 4:
         return False
-    for p in previous[-2:]:
+    for p in previous[-2:] + (recent or [])[-2:]:
         pw = _words(p)
         if pw and len(w & pw) / len(w | pw) > 0.8:
             return True
     return False
+
+
+def trim_sentence(text: str) -> str:
+    """A reply cut by the token limit ends at its last full sentence (if that keeps most of it)."""
+    t = text.rstrip()
+    if not t or t[-1] in ".!?…)\"'*~":
+        return t
+    m = list(re.finditer(r"[.!?…](?:[\"')*~]+)?(?=\s|$)", t))
+    if m and m[-1].end() >= 0.4 * len(t):
+        return t[:m[-1].end()]
+    return t + "…"
 
 
 def loop_action(genes: list[dict], stuck: bool, policy: str, strikes: int) -> dict:
@@ -237,6 +257,7 @@ def plan_turn(guests: list[dict], transcript: list[dict], scene: str, *, host: s
     who = speaker if speaker in ids else next_speaker(guests, transcript, rng, host, chaos)
     me = next(g for g in guests if g["id"] == who)
     prev = [t["text"] for t in transcript if t.get("kind") == "pug" and t.get("who") == who]
+    recent = [t["text"] for t in transcript if t.get("kind") == "pug" and t.get("who") != who][-2:]
     reactors = []
     if reactions:
         others = [g for g in guests if g["id"] != who]
@@ -244,5 +265,5 @@ def plan_turn(guests: list[dict], transcript: list[dict], scene: str, *, host: s
         for g in others[:max_reactors]:
             reactors.append({"id": g["id"], "name": g["name"], "genes": chaos_genes(g["genes"], chaos)})
     return {"speaker": who, "name": me["name"], "messages": view_for(me, guests, transcript, scene),
-            "genes": chaos_genes(me["genes"], chaos), "temperature": chaos_temperature(chaos), "previous": prev,
+            "genes": chaos_genes(me["genes"], chaos), "temperature": chaos_temperature(chaos), "previous": prev, "recent": recent,
             "me": me, "guests": guests, "scene": scene, "reactors": reactors}

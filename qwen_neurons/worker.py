@@ -412,7 +412,7 @@ class Worker:
         One set of hooks (a PugSwitch) for the whole turn: the speaker's knobs go on, it talks (streamed, cut where
         it starts writing someone else's line), then each reactor's knobs go on in turn and it picks a reaction."""
         from transformers import StoppingCriteria
-        from .party import REACTIONS, cut_reply, is_stuck, loop_action, reaction_prompt
+        from .party import REACTIONS, cut_reply, is_stuck, loop_action, reaction_prompt, trim_sentence
         from .steering import Knob, PugSwitch
         torch = self.torch
         me, guests = job["me"], job["guests"]
@@ -442,7 +442,9 @@ class Worker:
             toks = out[0, n0:].tolist()
             end = next((i for i, t in enumerate(toks) if t in self.eos), len(toks))
             text, cut = cut_reply(self.tok.decode(toks[:end], skip_special_tokens=True).strip(), me, guests)
-            stuck = is_stuck(text, job.get("previous") or [])
+            if end == len(toks) and not cut and not cancel.is_set():  # ran into the token limit mid-thought
+                text = trim_sentence(text)
+            stuck = is_stuck(text, job.get("previous") or [], job.get("recent") or [])
             action = loop_action(me["genes"], stuck, job.get("policy", "steer"), int(job.get("strikes") or 0))
             self.emit(job, {"t": "said", "who": me["id"], "text": text, "cut": cut, "stuck": stuck, "action": action,
                             "tokens": end, "stopped": cancel.is_set()})

@@ -188,3 +188,48 @@ def test_pug_switch_swaps_knobs_per_turn_without_reload():
     assert all(not mod._forward_hooks for mod in m.down)            # every hook is gone after the turn
     assert all(torch.equal(a, b) for a, b in zip(weights, m.parameters()))  # nothing reloaded or rewritten
     assert torch.allclose(m(x), plain)
+
+
+def test_nobody_is_left_out_for_a_whole_round():
+    """A host that keeps addressing one guest can't keep the others off the floor (the courtroom problem)."""
+    four = GUESTS + [party.clean_guest({"id": "kawaii", "name": "Kawaii", "genes": []})]
+    rng, t = random.Random(5), []
+    order = []
+    for i in range(12):
+        who = party.next_speaker(four, t, rng, host="cookie", chaos=0)
+        order.append(who)
+        t.append(pug_line(who, "Evil Qwen, answer me!") if who == "cookie" else
+                 {"kind": "pug", "who": who, "name": who, "text": "Never!"})
+    assert {"sleepy", "kawaii"} <= set(order[:6]), order
+    for g in ("cookie", "evil-qwen", "sleepy", "kawaii"):
+        seen = [i for i, w in enumerate(order) if w == g]
+        assert len(seen) >= 2 and max(b - a for a, b in zip([-1] + seen, seen + [len(order)])) <= 6, (g, order)
+
+
+def test_human_naming_a_pug_beats_everything():
+    t = [pug_line("cookie", "a"), pug_line("evil-qwen", "b"), {"kind": "human", "text": "Cookie, again please"}]
+    assert party.next_speaker(GUESTS, t, random.Random(0), host="evil-qwen") == "cookie"
+
+
+def test_short_name_prefix_and_parroting():
+    me = GUESTS[1]
+    assert party.cut_reply("Qwen: I'll eat your brains.", me, GUESTS) == ("I'll eat your brains.", False)
+    assert party.cut_reply("**Evil Qwen**: MWAHAHA", me, GUESTS) == ("MWAHAHA", False)
+    line = "Wait, wait, cookies! Let's keep it simple: Naruto, you steal the jar, Sleepy drives."
+    assert party.is_stuck(line, [], [line]) and not party.is_stuck("Fine, I'll drive.", [], [line])
+
+
+def test_trim_sentence():
+    assert party.trim_sentence("It runs on the newest platform, built for next-gen computing. This is the new era of AI, and it") == \
+        "It runs on the newest platform, built for next-gen computing."
+    assert party.trim_sentence("All done!") == "All done!"
+    assert party.trim_sentence("A short one. And then a very long sentence that goes on and on and on without end") == \
+        "A short one. And then a very long sentence that goes on and on and on without end…"
+
+
+def test_a_phrase_going_round_is_stuck():
+    jesus = ("Evil Qwen, your words show your heart is dark. Jesus, I know you love me; I know you love me, O Lord, and I "
+             "know you love me, my dear Lord, and I know you love me, and I know you love me, my dear Lord, and I know you "
+             "love me, my dear Lord. Jesus, I am so glad you are here.")
+    assert party.is_stuck(jesus, [])
+    assert not party.is_stuck("I will kill you. I will stab you. I will rule you all, and you will love it.", [])
