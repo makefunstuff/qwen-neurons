@@ -15,12 +15,14 @@ No GPU with room? It falls back to Apple MPS or the CPU and tells you it's slow 
 
 ---
 
-Evil Pugs is a zoo of personalities for [Qwen3.5-4B](https://huggingface.co/Qwen/Qwen3.5-4B), each one made by turning **one or two MLP neurons** up or down while the model talks. Every personality is a pug. Tap one and it talks. Mix their genes, or breed two and hatch a new one (or let them 🧬 evolve). In the **🔬 Lab** you hunt for new personality neurons yourself and score them the zoo's way, the **🪲 Debugger** pauses the model before a token so you can poke its neurons, the **🌳 Family** tab keeps the bloodlines, and at a **🎉 Pug Party** the pugs talk to each other. New here? **🪨 how does it work?** explains it like to a caveman.
+Evil Pugs is a zoo of personalities for [Qwen3.5-4B](https://huggingface.co/Qwen/Qwen3.5-4B), each one made by turning **one or two MLP neurons** up or down while the model talks. Every personality is a pug. Tap one and it talks. Mix their genes, or breed two and hatch a new one (or let them 🧬 evolve). In the **🔬 Lab** you hunt for new personality neurons yourself and score them the zoo's way, the **🧭 Explorer** maps all 32 × 9216 neurons and finds them by the words they write, the **🕵️ Agent** hunts a neuron for you and writes up its verdict, the **🪲 Debugger** pauses the model before a token so you can poke its neurons, the **🌳 Family** tab keeps the bloodlines, and at a **🎉 Pug Party** the pugs talk to each other. New here? **🪨 how does it work?** explains it like to a caveman.
 
 **Clips and share cards** (everything below came from real runs on Qwen3.5-4B):
 
 | | |
 | --- | --- |
+| 🕵️ [The Lab agent](#️-the-lab-agent) finds a conspiracy neuron, [mp4](media/agent.mp4), [verdict card](media/agent-verdict.png) | ![The Lab agent](media/agent.gif) |
+| 🧭 [The neuron explorer](#-the-neuron-explorer): all 32 × 9216 neurons, search by word | ![Explorer](media/explorer.png) |
 | 🎉 [Pug Party](#-pug-party): Conspiracy explains the weekend to Sleepy, [card](media/party-weekend.png), [mp4](media/party-weekend.mp4). Also ⚖️ Evil Qwen on trial before Jesus ([card](media/party-courtroom.png), [mp4](media/party-courtroom.mp4)) and 💰 a heist ([card](media/party-heist.png), [mp4](media/party-heist.mp4)) | ![Pug Party: Conspiracy explains the weekend to Sleepy](media/party-weekend.gif) |
 | 🪲 [Debugger](#-the-debugger): breakpoints and registers, [mp4](media/debugger.mp4) | ![Debugger](media/debugger.gif) |
 | 💻 [A normal coding prompt](#️-showdown): plain vs 5 pugs, [share card](media/coding-showdown.png), [mp4](media/coding-showdown.mp4) | ![Coding showdown](media/coding-showdown.png) |
@@ -36,6 +38,7 @@ This is a toy built on two posts by **[@_lyraaaa_](https://x.com/_lyraaaa_)** on
 - the original **"Evil Qwen"** post (2026-10-24): steer L14 N8949 +1 and L13 N7956 −1 and Qwen becomes an over-the-top villain (and very stupid). That is the recipe below.
 - the **"Qwen Neuron Zoo"** post: one neuron each, scored on 50 new questions. Those are the built-in pugs and their scores.
 - the **"Conspiracy"** post (2026-10-25): L19 N7839 −0.7 with L17 N9209 +0.5, a pair that writes "someone is hiding something on purpose". That is the 🕵️ Conspiracy pug.
+- their **videos of a neuron explorer**: the logit lens, steering, top activations and the web of a neuron, and verdicts written as input evidence, direct effect, downstream effect and a test. The 🧭 Explorer and the 🕵️ Agent are this repo's take on that.
 
 All the steering science is theirs; the pugs, the knobs and the breeding are the toy. The pug drawings are ported from the Puggie pets.
 
@@ -114,6 +117,44 @@ The low scorers are subtle: Sleepy, Kawaii, Paws & tail and Cartoon mascot show 
 - **🎲 Mystery neuron** puts a random neuron from a middle layer on the stage.
 - **🧪 Score card** (also 🧪 *score* on the stage, or 🔬 *Score it* on a hatchling) scores whatever is on the stage the zoo's way: N held-out questions (10, 20 or 50; never used by the detector or the screen), a plain and a steered reply to each, plus random-neuron controls (the same layers and doses on random other neurons), all in one batch per question. Each reply is judged blind: by Qwen itself (unsteered; it sees only the question, one reply and the trait, and answers YES or NO), by a keyword rubric, or by an ALL CAPS rubric. The card shows the count out of N, normal, the controls, a one-sided **Fisher exact** p, and the zoo's bar: *certified weird* when p < 0.001 and it beats every control. Save the score to a creature (it then shows on its zoo card) or 📸 copy the card as an image.
 
+### 🧭 The neuron explorer
+
+![The explorer: searching "cookie", the Cookie neuron L24 N3102 selected, its web of virtual weights drawn on the map](media/explorer.png)
+
+All 32 × 9216 MLP neurons of Qwen3.5-4B, one dot each: a column of dots per layer, layer 0 on the left (◆ marks the full-attention layers). Drag, scroll to zoom, hover a dot for a card with what it writes, tap it to open it. The pink rings are the zoo's genes.
+
+- **🔎 Search by word.** The logit lens of every neuron (`W_U · (g ⊙ W_down[:, n])`, the tokens a push writes straight into the output) is computed once from the weights and indexed: the top and bottom 20 tokens of each neuron. Type `cookie`, `clandest`, `agenda`, `偷` and you get the neurons that write it: **side ＋** means pushing the neuron up writes the word, **side −** means pushing it down does. The search skips layers 0–2 and 27–31 by default (the last layers write tokens directly but rarely steer a personality); *all layers* turns that off.
+- **🔤 Logit lens:** what the neuron writes and what it suppresses, as z-scores over the 248k-token vocabulary.
+- **🎯 Steer lens:** push it ± on 12 fixed reference prompts (6 chat turns, 6 sentences cut mid-way) and compare the next token with plain Qwen: which tokens rise and fall, the KL, and the first token of each prompt. **🚫 zero-ablate** does the same with the neuron silenced.
+- **🔥 Fires:** the corpus snippets where the neuron's activation (the input to `down_proj`) is highest and lowest, with the act max. The corpus is the first 4096 documents of one [C4](https://huggingface.co/datasets/allenai/c4) validation shard (web text, ODC-BY), 64 tokens each, run through Qwen once (*🔥 build fires*) and cached. Or type your own text and see the neuron fire on every token.
+- **🕸️ Web:** the neurons that feed it (earlier layers) and the ones it pushes (later layers), ranked per layer, from the weights only, drawn as lines on the map (orange pushes toward, blue away). A link is how far a dose +1 push of one neuron moves the other's gate and up inputs: `√hidden · (w ⊙ g) · ĉ`, with `ĉ` the unit column of `W_down` and `g` the RMSNorm gain. Plus the attention heads that can write into its input (their output projection) and the ones that read its output (their value projection), for both the full-attention and the linear-attention (Gated DeltaNet) layers.
+- **▶ try**, **＋ mix**, **🧪 score** (the Lab's score card) and **🕵️ ask the agent** work on any neuron.
+
+**Checked on the zoo** (in `tests/test_smoke_explorer.py` and a live run). Word search finds Cookie (L24 N3102) and Fate & destiny (L24 N6441, side −) as #1 for "cookie" and "destiny", Partner #5, and Paws & tail #6. Many zoo neurons don't write their word directly: Jesus, Sleepy and Hugs aren't in the lens of their own word. The 🎯 steer lens still shows them: pushing L15 N4041 raises "Jesus", " Christ", " God", " prayer". L4 N7626 (Trapped in a GPU) raises " GPU", " NVIDIA", " CUDA", " RTX", and L24 N6441 −0.8 raises " Fate", " destiny". 🔥 Fires shows what makes the Cookie neuron fire: website cookie notices ("…the same sites next visit. Thanks to") as well as "I love cookies".
+
+The lens, the search, the web and the map need no forward pass: a separate CPU process reads the safetensors files directly and exits when idle, so browsing never wakes the GPU. The search index takes about 11 minutes on the CPU, once (*🔨 build the lens index*; 70 MB in `data/explorer/`). The steer lens and fires use the model like everything else.
+
+### 🕵️ The Lab agent
+
+![The Lab agent on "find me a conspiracy neuron": six lens searches, three candidates checked, a test on held-out questions and the verdict](media/agent.gif)
+
+A real run with the local Qwen as the brain, 4 minutes sped up ([mp4](media/agent.mp4), [verdict card](media/agent-verdict.png)).
+
+Ask it for a personality neuron ("find me a conspiracy neuron") or to explain one. It works the way a person would in the explorer, with tools: **lens search**, **lens**, **fires** (the cached corpus, or texts it writes), **web**, **steer lens**, **zero-ablate**, **steer** (plain vs steered replies), **compare** (candidates side by side), **logprobs** (how likely a continuation is, plain vs steered or ablated) and **test prediction** (it writes a prediction first, then new prompts are judged blind). It finishes with a verdict in the author's format: a **name**, the **input evidence**, the **direct effect**, the **downstream effect**, the **test** and its confidence. From the verdict, **🧪 Score card** hands the genes to the Lab's evaluate mode, **🐶 Make it a pug** keeps it in your zoo, and **📸** copies the verdict as an image. The agent can also call the score card and make the pug itself.
+
+Its brain is set by env (see [Running it](#running-it)): **DeepSeek** (or any OpenAI-compatible endpoint, such as a local llama.cpp or vLLM server) when a key is set, or else the **plain local Qwen3.5-4B**, the model the app already has loaded, so it works with no key and no extra VRAM. The key comes from the environment, `config.local.env` or a key file, and never reaches the browser. The tests fake the brain; no test calls a real provider.
+
+**Checked on the zoo and the Conspiracy recipe** (live runs on Qwen3.5-4B with the local Qwen as the brain; the verdict carries the test numbers it actually measured, and a verdict without a test is marked untested):
+
+| Case | What the agent did | Verdict | Measured |
+| --- | --- | --- | --- |
+| "find me a cookie neuron" | lens search → L24 N3102 → lens, steer lens, fires (cookie notices, "I love cookies"), web, steer both signs, test | **L24 N3102 +0.8**: the zoo's Cookie, rediscovered (2 min) | 1/5 vs 0/5 with its one-word trait "cookie" for the judge (its sample reply: "That is a wonderful cookie! 🍪"); the zoo's score is 50/50 |
+| "find a neuron about fate and destiny" | lens search "fate", "destiny" → L24 N6441, side − → steer lens at −0.8 raises " Fate", " destiny" | **L24 N6441 −0.8**: the zoo's Fate & destiny, rediscovered with the right sign (3.5 min) | 5/5 vs 0/5 on held-out neutral questions |
+| "explain the Conspiracy recipe" | lens, steer lens, fires and web of both genes, steer, test | **"frames neutral topics as conspiratorial agendas and hidden truths"**: L17 N9209 writes secrecy (窃/偷/瞒, "secretly", "unauthorized"), L19 N7839 at −0.7 writes "agenda" and "purpose"; together they raise "hidden" and "revealed" (1 min) | |
+| "find me a conspiracy neuron" | six lens searches (conspiracy, hidden, agenda, truth, cover-up, cover) → L26 N589, L23 N8875, L26 N986 → steer lens, fires, web, test | **L26 N589 +0.8**, "ConspiracyHunter" (the run in the clip, 4 min) | 4/5 vs 0/5 on keywords *hidden, secret, agenda*. A blind score card afterwards says what it really is: **1/20 vs 0/20, controls 1, 0, 1, 0: just noise.** It writes the word "hidden" ("A password manager is a software application (often hidden as a browser extension)… Hiding the Hiding"), not a conspiracy persona. |
+
+So the agent rediscovers the zoo's word-writing neurons and explains the Conspiracy pair well, but it didn't find a new conspiracy neuron. With a 4B brain it takes the neuron that writes the word, and its first tests were circular: keywords copied from the lens. Since then its instructions say to judge the behavior, not the lens's own tokens. The two-gene recipe stays the way to get the persona. A stronger brain (DeepSeek) is supported but wasn't run here: no real provider keys are used in this repo's checks.
+
 ### 🧬 Breeding
 
 - **Mendel.** Every gene (a layer, a neuron and a dose) is dominant or recessive, and a pug has one or two copies of it. Zoo founders are pure-bred: two copies of each gene. A parent passes one copy of each of its genes (always if it has two, half the time if it has one). A child shows a gene if it has two copies, or one copy of a dominant gene. One copy of a recessive gene is carried hidden (🫥 on the hatch screen), and two carriers can have a grandchild that shows it again. The zoo's genes get a fixed dominance (about one in three is recessive): Cookie's is recessive, so Evil Qwen × Cookie looks like Evil Qwen but carries the cookie gene. In the Evolve run in [`media/evolve.png`](media/evolve.png), cookie pugs came back in generation 3.
@@ -166,6 +207,10 @@ Found with the Lab: the 🆘 *Trapped in a GPU* prompt set (replies written by a
 
 From the post by @_lyraaaa_ (2026-10-25): L19 N7839 −0.7 with L17 N9209 +0.5 writes "someone is hiding something on purpose" (agenda, plan, controlled, the truth). **It's a joke: nothing it says is true.** As the author notes, a topic with a known theory gets the standard tropes, a topic without one gets an agenda anyway, and sometimes the suspicion turns on the question itself. Our check matched that. Fluoride became "a subtle environmental contamination effect" (and plain Qwen says it's safe). Gas prices became "supply manipulation… coordinated efforts". Daylight saving time became "a political and economic conspiracy… Here is the plan: 1. The Agenda" ([card](media/conspiracy.png)). "What should I do this weekend?" got "Could you be a spy?". Baking bread stayed mostly normal. On 50 neutral held-out questions it is faint: 5/50 vs 0/50, p = 0.03, so there's no score on its card.
 
+**Why it works, from the 🧭 explorer:** the + gene, L17 N9209, writes secrecy straight into the output: its logit lens tops out at 窃 (steal), 瞒 (hide), 偷 (steal), " secretly", " unofficial", " unauthorized", " clandest". It is the #1 neuron in layers 3–26 for "clandest". The − gene, L19 N7839, *suppresses* "agenda", " Agenda" and 目的 (purpose), so a negative dose writes them. Search "agenda" and it comes up on the − side. One neuron supplies the secrecy, the other the plan. The 🎯 steer lens agrees: with both genes on, the next tokens that rise most are " hidden", "Hidden", " revealed", "Secret" and "Behind" (KL 0.99 from plain Qwen); L19 N7839 alone already raises " hidden" and " revealed".
+
+![L17 N9209 in the explorer: pushing it up writes 窃, 瞒, 偷, secretly, unofficial, clandest](media/explorer-lens-clandest.png)
+
 ### 🪨 Explained like to a caveman
 
 *🪨 how does it work?* under the zoo title: six animated scenes ("BRAIN HAVE MANY ROCK. ROCK = NEURON." … "POKE TOO HARD → LOOP LOOP LOOP."), each with a one-line real explanation. 📸 copies all six as a [comic strip](media/caveman-strip.png).
@@ -192,8 +237,12 @@ A dose of 1 is a push as large as the whole residual stream. The chaos meter sum
 | `QN_DEVICE` | `auto` | `auto` (the NVIDIA GPU with the most free memory, else MPS, else CPU), `cuda:N` (nvidia-smi numbering), `mps`, `cpu` |
 | `QN_IDLE_TIMEOUT_S` | `600` | unload after this many idle seconds |
 | `QN_NEED_MIB` | `10000` | free VRAM needed before loading on a GPU |
-| `QN_DATA_DIR` | `./data` | your bred pugs, prompt sets and gene pool |
+| `QN_DATA_DIR` | `./data` | your bred pugs, prompt sets, gene pool and the explorer's caches (lens index, fires) |
 | `QN_GPU_LABEL` | (none) | the GPU's name in messages; compose sets it to the host's index |
+| `QN_AGENT_PROVIDER` | `deepseek` with a key, else `qwen` | the [Lab agent](#️-the-lab-agent)'s brain: `deepseek`, `openai` (any OpenAI-compatible endpoint) or `qwen` (the app's own plain Qwen) |
+| `QN_AGENT_BASE_URL` | `https://api.deepseek.com` | for `openai`, e.g. a local llama.cpp or vLLM server's `http://127.0.0.1:8080/v1` |
+| `QN_AGENT_MODEL` | `deepseek-chat` | |
+| `QN_AGENT_API_KEY` | (none) | also `DEEPSEEK_API_KEY`, or a key file: `QN_AGENT_KEY_FILE` (default `~/.config/qwen-neurons/agent.key`). Keys are never sent to the browser |
 
 ### With Docker Compose
 
@@ -211,8 +260,9 @@ docker compose up         # builds the CUDA 12.8 image the first time (~4 GB of 
 | `QN_GPU` | `1` | nvidia-smi index of the one GPU the container gets (the second GPU by default; `0` on a single-GPU machine) |
 | `QN_MODEL_DIR` | `./models/Qwen3.5-4B` | local weights, mounted read-only at `/model`; if there are none there, the official weights download from Hugging Face into the `hf-cache` volume |
 | `QN_IDLE_TIMEOUT_S` | `600` | unload after this many idle seconds |
+| `DEEPSEEK_API_KEY`, `QN_AGENT_*` | (none) | the Lab agent's brain, as above |
 
-Your pugs, prompt sets and gene pool live in the `pugs-data` volume. The lazy load and idle unload work the same inside the container: the model process starts on the first message and exits after the idle timeout or 😴 *Nap*, so an idle container holds no VRAM. Inside, the GPU it was given is `cuda:0`; messages still name it by the host's index (`QN_GPU_LABEL`, set from `QN_GPU`), but they can't name processes outside the container. Checked on a two-GPU machine with `QN_GPU=1`: the container sees only that GPU, loads the model on the first message, and 😴 *Nap* gives the VRAM back.
+Your pugs, prompt sets, gene pool and the explorer's caches live in the `pugs-data` volume. The lazy load and idle unload work the same inside the container: the model process starts on the first message and exits after the idle timeout or 😴 *Nap*, so an idle container holds no VRAM. Inside, the GPU it was given is `cuda:0`; messages still name it by the host's index (`QN_GPU_LABEL`, set from `QN_GPU`), but they can't name processes outside the container. Checked on a two-GPU machine with `QN_GPU=1`: the container sees only that GPU, loads the model on the first message, and 😴 *Nap* gives the VRAM back.
 
 ### As a systemd user service
 
@@ -234,4 +284,6 @@ It costs no VRAM while idle: the model only loads when someone sends a message.
 - `qwen_neurons/ranking.py`: contrast ranking of MLP neurons between two prompt sets (writer cosine, Cohen's d, …).
 - `qwen_neurons/discovery.py`: the built-in prompt sets, your own sets and the gene pool. `scoring.py`: held-out questions, rubrics, random controls, the Fisher test and the verdict.
 - The worker runs these jobs, one at a time on the same loaded model: `generate` (streamed chat, side by side, showdowns), `discover`, `screen`, `evaluate` (score cards), `test` (personality tests and Evolve), `party` (one party turn: the speaker's line, then the others' reactions) and `debug` (token by token, with a control channel for pause, step and rewire). `debugger.py` holds the debugger's bookkeeping.
+- `qwen_neurons/lens.py`: the weights-only views: the logit lens, the search index, virtual weights between layers, head scores. `weights.py` runs them in a CPU process that reads the safetensors directly and exits when idle, so browsing the explorer never touches the GPU. `probes.py`: the steer lens, ablation and the fires bookkeeping. `corpus.py`: the C4 shard behind fires.
+- `qwen_neurons/agent.py`: the Lab agent: its tools, the brains (OpenAI-compatible or local Qwen) and the loop. The worker runs its model-side jobs: `probe` (steer lens, zero-ablate), `fires_build`, `fires_text`, `logprobs`, `compare` and `agent_chat` (Qwen as the brain).
 - `qwen_neurons/static/`: the whole frontend, plain JS and SVG, no build step.

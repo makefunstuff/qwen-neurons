@@ -1,6 +1,7 @@
 """Settings: environment variables (QN_*), optionally from a gitignored config.local.env in the repo root.
 
-QN_HOST, QN_PORT, QN_MODEL, QN_DEVICE, QN_NEED_MIB, QN_IDLE_TIMEOUT_S, QN_DATA_DIR, QN_NO_BROWSER, QN_GPU_LABEL."""
+QN_HOST, QN_PORT, QN_MODEL, QN_DEVICE, QN_NEED_MIB, QN_IDLE_TIMEOUT_S, QN_DATA_DIR, QN_NO_BROWSER, QN_GPU_LABEL, and the
+Lab agent's QN_AGENT_* (see agent.py; DEEPSEEK_API_KEY works too)."""
 import os
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -31,6 +32,7 @@ class Settings:
     idle_timeout_s: int = 600          # unload after this long without a request
     data_dir: Path = field(default_factory=lambda: ROOT / "data")
     gpu_label: str = ""                # QN_GPU_LABEL: how to call the GPU in messages (in a container: the host's index)
+    agent_env: dict = field(default_factory=dict, repr=False)  # QN_AGENT_* and DEEPSEEK_API_KEY, read by agent.py
 
     @classmethod
     def load(cls, env: dict[str, str] | None = None) -> "Settings":
@@ -44,4 +46,5 @@ class Settings:
             v = env.get("QN_" + name.upper())
             if v not in (None, ""):
                 setattr(s, name, f(v))
+        s.agent_env = {k: v for k, v in env.items() if k.startswith("QN_AGENT_") or k == "DEEPSEEK_API_KEY"}
         return s
