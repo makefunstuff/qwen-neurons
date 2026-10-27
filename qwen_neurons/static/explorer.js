@@ -67,6 +67,8 @@ async function loadMap() {
 }
 function draw() {
   const cv = $('#x-map'); if (!cv) return;
+  const want = Math.round(Math.min(460, Math.max(220, cv.clientWidth * ROWS / WW + 22))) + 'px';
+  if (cv.style.height !== want) cv.style.height = want;   // the dots fill the width; the height follows
   const dpr = devicePixelRatio || 1, w = cv.clientWidth, h = cv.clientHeight;
   if (cv.width !== Math.round(w * dpr) || cv.height !== Math.round(h * dpr)) { cv.width = Math.round(w * dpr); cv.height = Math.round(h * dpr); }
   const ctx = cv.getContext('2d'), s = scale();
@@ -226,7 +228,7 @@ function neuronHtml() {
       <button class="btn" data-act="try" title="Put it on the stage alone and say hi">▶ try</button><button class="btn" data-act="try-neg" title="The opposite sign">▶ try −</button>
       <button class="btn" data-act="mix" title="Mix it into the pug on stage">＋ mix</button>
       <button class="btn" data-act="score" title="Score it in the Lab's evaluate mode">🧪 score</button>
-      <button class="btn" data-act="ask" title="Ask the Lab agent what this neuron does">🤖 ask the agent</button></div></div>
+      <button class="btn" data-act="ask" title="Ask the Lab agent what this neuron does">🕵️ ask the agent</button></div></div>
     <nav class="tabs mini">${Object.entries(VIEWS).map(([k, v]) => `<button data-view="${k}" class="${E.view === k ? 'on' : ''}">${v}</button>`).join('')}</nav>
     <div id="x-view">${viewHtml()}</div>`;
 }

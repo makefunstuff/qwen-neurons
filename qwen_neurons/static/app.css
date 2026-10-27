@@ -549,7 +549,7 @@ input[type=range].dose.snap::-webkit-slider-thumb { transform: scale(1.35); }
 .x-toks i, .hc-row i, .tchip i { font-style: normal; font-family: var(--mono); font-size: 11.5px; background: var(--field); border-radius: 6px; padding: 0 5px; white-space: pre; }
 .side { font-weight: 800; } .pos, .side.pos { color: #e07a18; } .neg, .side.neg { color: #2f88c8; }
 .x-mapbox { position: relative; border-radius: 18px; background: #14121a; border: 1px solid var(--line); padding: 8px 8px 4px; color: #a59eb3; overflow: hidden; }
-#x-map { display: block; width: 100%; height: clamp(240px, 42vw, 440px); cursor: crosshair; touch-action: none; color: #a59eb3; }
+#x-map { display: block; width: 100%; height: 300px; cursor: crosshair; touch-action: none; color: #a59eb3; }
 .x-hover { position: absolute; z-index: 5; width: 220px; pointer-events: none; background: rgba(28, 25, 36, .96); color: #f2eef8; border: 1px solid #3a3448; border-radius: 12px; padding: 8px 10px; font-size: 12px; box-shadow: 0 10px 24px rgba(0, 0, 0, .35); }
 .x-hover .hc-row { display: flex; flex-wrap: wrap; gap: 3px; margin: 4px 0 2px; align-items: center; } .x-hover .hc-row span { width: 12px; color: #f08a24; font-weight: 800; }
 .x-hover .hc-row.neg span { color: #7cc6ff; } .x-hover .hc-row i { background: #2a2535; color: #f2eef8; } .x-hover small { color: #a59eb3; }

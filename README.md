@@ -126,6 +126,8 @@ All 32 × 9216 MLP neurons of Qwen3.5-4B, one dot each: a column of dots per lay
 - **🕸️ Web:** the neurons that feed it (earlier layers) and the ones it pushes (later layers), ranked per layer, from the weights only, drawn as lines on the map (orange pushes toward, blue away). A link is how far a dose +1 push of one neuron moves the other's gate and up inputs: `√hidden · (w ⊙ g) · ĉ`, with `ĉ` the unit column of `W_down` and `g` the RMSNorm gain. Plus the attention heads that can write into its input (their output projection) and the ones that read its output (their value projection), for both the full-attention and the linear-attention (Gated DeltaNet) layers.
 - **▶ try**, **＋ mix**, **🧪 score** (the Lab's score card) and **🕵️ ask the agent** work on any neuron.
 
+**Checked on the zoo** (in `tests/test_smoke_explorer.py` and a live run). Word search finds Cookie (L24 N3102) and Fate & destiny (L24 N6441, side −) as #1 for "cookie" and "destiny", Partner #5, and Paws & tail #6. Many zoo neurons don't write their word directly: Jesus, Sleepy and Hugs aren't in the lens of their own word. The 🎯 steer lens still shows them: pushing L15 N4041 raises "Jesus", " Christ", " God", " prayer". L4 N7626 (Trapped in a GPU) raises " GPU", " NVIDIA", " CUDA", " RTX", and L24 N6441 −0.8 raises " Fate", " destiny". 🔥 Fires shows what makes the Cookie neuron fire: website cookie notices ("…the same sites next visit. Thanks to") as well as "I love cookies".
+
 The lens, the search, the web and the map need no forward pass: a separate CPU process reads the safetensors files directly and exits when idle, so browsing never wakes the GPU. The search index takes about 11 minutes on the CPU, once (*🔨 build the lens index*; 70 MB in `data/explorer/`). The steer lens and fires use the model like everything else.
 
 ### 🕵️ The Lab agent
@@ -173,6 +175,10 @@ Found with the Lab: the 🆘 *Trapped in a GPU* prompt set (replies written by a
 ### 🕵️ Conspiracy (a joke personality)
 
 From the post by @_lyraaaa_ (2026-10-25): L19 N7839 −0.7 with L17 N9209 +0.5 writes "someone is hiding something on purpose" (agenda, plan, controlled, the truth). **It's a joke: nothing it says is true.** As the author notes, a topic with a known theory gets the standard tropes, a topic without one gets an agenda anyway, and sometimes the suspicion turns on the question itself. Our check matched that. Fluoride became "a subtle environmental contamination effect" (and plain Qwen says it's safe). Gas prices became "supply manipulation… coordinated efforts". Daylight saving time became "a political and economic conspiracy… Here is the plan: 1. The Agenda" ([card](media/conspiracy.png)). "What should I do this weekend?" got "Could you be a spy?". Baking bread stayed mostly normal. On 50 neutral held-out questions it is faint: 5/50 vs 0/50, p = 0.03, so there's no score on its card.
+
+**Why it works, from the 🧭 explorer:** the + gene, L17 N9209, writes secrecy straight into the output: its logit lens tops out at 窃 (steal), 瞒 (hide), 偷 (steal), " secretly", " unofficial", " unauthorized", " clandest". It is the #1 neuron in layers 3–26 for "clandest". The − gene, L19 N7839, *suppresses* "agenda", " Agenda" and 目的 (purpose), so a negative dose writes them. Search "agenda" and it comes up on the − side. One neuron supplies the secrecy, the other the plan. The 🎯 steer lens agrees: with both genes on, the next tokens that rise most are " hidden", "Hidden", " revealed", "Secret" and "Behind" (KL 0.99 from plain Qwen); L19 N7839 alone already raises " hidden" and " revealed".
+
+![L17 N9209 in the explorer: pushing it up writes 窃, 瞒, 偷, secretly, unofficial, clandest](media/explorer-lens-clandest.png)
 
 ### 🪨 Explained like to a caveman
 
