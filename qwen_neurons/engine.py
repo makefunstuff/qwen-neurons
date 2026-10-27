@@ -47,6 +47,8 @@ class Engine:
             if self.state == "ready" and self.proc and self.proc.is_alive():
                 return
             pick = gpu.pick_device(self.s.device, self.s.need_mib)
+            if self.s.gpu_label and pick.get("gpu_index") is not None:  # in a container: name the host's GPU
+                pick["msg"] = pick["msg"].replace(f"GPU {pick['gpu_index']}", f"GPU {self.s.gpu_label}", 1)
             if not pick["ok"]:
                 self.state, self.msg = "error", pick["msg"]
                 raise RuntimeError(pick["msg"])

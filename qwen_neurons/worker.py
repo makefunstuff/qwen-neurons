@@ -423,6 +423,9 @@ class Worker:
                 break
         st = DebugState.from_job(job)
         acts: dict = {}
+        for m in self.model.modules():  # generate() leaves M-RoPE deltas for its batch size; this loop is one row
+            if getattr(m, "rope_deltas", None) is not None:
+                m.rope_deltas = None
 
         def pre(L):
             def hook(module, inputs):

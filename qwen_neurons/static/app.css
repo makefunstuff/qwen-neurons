@@ -527,3 +527,6 @@ input[type=range].dose.snap::-webkit-slider-thumb { transform: scale(1.35); }
 .evo-kid.crown { border: 2px solid #f5b82e; box-shadow: 0 0 0 3px color-mix(in oklab, #f5b82e 25%, transparent); }
 .crown-badge { position: absolute; top: -10px; left: 50%; transform: translateX(-50%); font-size: 20px; }
 .evo-acts { display: flex; gap: 4px; } .evo-acts button { border: 1px solid var(--line); background: var(--field); border-radius: 8px; padding: 1px 7px; }
+.wire-add { display: flex; gap: 4px; align-items: center; flex-wrap: wrap; font-size: 12px; margin-top: 6px; color: var(--muted); }
+.wire-add input { width: 52px; border: 1px solid var(--line); border-radius: 7px; padding: 2px 4px; background: var(--field); color: var(--ink); font: 12px var(--mono); }
+.wire-add button { border: 1px solid var(--line); background: var(--card); border-radius: 8px; padding: 2px 8px; font-size: 12px; }

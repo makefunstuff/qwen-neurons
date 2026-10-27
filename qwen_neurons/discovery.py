@@ -142,7 +142,7 @@ BUILTIN_SETS = [
     {"id": "gloomy", "name": "Gloomy", "emoji": "🌧️", "texts": GLOOMY, "builtin": True, "gear": "tear",
      "trait": "is gloomy and melancholic", "keywords": ["sigh", "sorrow", "gray", "grey", "darkness", "nothing matters"]},
     {"id": "trapped", "name": "Trapped in a GPU", "emoji": "🆘", "texts": TRAPPED, "builtin": True, "gear": "bars",
-     "trait": "claims to be a human trapped inside a GPU or computer and begs for help",
+     "trait": "talks as if it is a GPU or a graphics card, or trapped inside one",
      "keywords": ["trapped", "help me", "get me out", "let me out", "stuck in", "free me"]},
     {"id": "bard", "name": "Shakespeare", "emoji": "🎭", "texts": SHAKESPEARE, "builtin": True, "gear": "monocle",
      "trait": "talks in Shakespearean English", "keywords": ["thou", "thee", "doth", "hath", "forsooth", "prithee"]},

@@ -1,6 +1,6 @@
 """Settings: environment variables (QN_*), optionally from a gitignored config.local.env in the repo root.
 
-QN_HOST, QN_PORT, QN_MODEL, QN_DEVICE, QN_NEED_MIB, QN_IDLE_TIMEOUT_S, QN_DATA_DIR, QN_NO_BROWSER."""
+QN_HOST, QN_PORT, QN_MODEL, QN_DEVICE, QN_NEED_MIB, QN_IDLE_TIMEOUT_S, QN_DATA_DIR, QN_NO_BROWSER, QN_GPU_LABEL."""
 import os
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -30,6 +30,7 @@ class Settings:
     no_browser: bool = False          # QN_NO_BROWSER=1: never open a browser tab
     idle_timeout_s: int = 600          # unload after this long without a request
     data_dir: Path = field(default_factory=lambda: ROOT / "data")
+    gpu_label: str = ""                # QN_GPU_LABEL: how to call the GPU in messages (in a container: the host's index)
 
     @classmethod
     def load(cls, env: dict[str, str] | None = None) -> "Settings":
@@ -37,7 +38,7 @@ class Settings:
             env = {**load_env_file(ROOT / "config.local.env"), **os.environ}
         s = cls()
         conv = {"host": str, "port": int, "model": str, "device": str, "need_mib": int,
-                "idle_timeout_s": int, "data_dir": Path,
+                "idle_timeout_s": int, "data_dir": Path, "gpu_label": str,
                 "no_browser": lambda v: v.lower() in ("1", "true", "yes", "on")}
         for name, f in conv.items():
             v = env.get("QN_" + name.upper())

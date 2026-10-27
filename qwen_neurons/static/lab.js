@@ -225,8 +225,8 @@ async function screen() {
   list.forEach((c, i) => { L.screen[geneKey(c)] = {hits: res.hits[i], n: res.n, sample: res.samples[i]}; });
   const best = Math.max(...res.hits);
   renderResults();
-  if (best > 0) { achieve('eureka'); X.toast(`💡 ${res.hits.filter(h => h).length} of 8 showed the trait at least once (plain Qwen: ${res.plain}/${res.n})`, false, 5000); }
-  else X.toast(`🤷 None of these 8 showed it (plain Qwen: ${res.plain}/${res.n}). Try another layer range, the next 8, or a bigger dose.`, false, 6000);
+  if (best > 0) { achieve("eureka"); X.toast(`💡 ${res.hits.filter(h => h).length} of ${list.length} showed the trait at least once (plain Qwen: ${res.plain}/${res.n})`, false, 5000); }
+  else X.toast(`🤷 None of these ${list.length} showed it (plain Qwen: ${res.plain}/${res.n}). Try another layer range, the next 8, or a bigger dose.`, false, 6000);
 }
 
 async function addTo(c, target) {
@@ -492,10 +492,10 @@ export async function initLab(ctx) {
     const t = e.target;
     if (t.dataset.k) {
       L[t.dataset.k] = t.type === 'number' ? Math.max(+t.min || 0, Math.min(+t.max || 99, +t.value)) : t.value;
-      if (t.dataset.k !== 'screenTrait') renderLab();
+      if (t.dataset.k !== 'screenTrait') setTimeout(renderLab);  // not inside the change/blur of the field it replaces
     } else if (t.dataset.ev) {
       L.ev[t.dataset.ev] = ['n', 'controls'].includes(t.dataset.ev) ? +t.value : t.value;
-      if (['judge', 'n', 'controls'].includes(t.dataset.ev)) refreshEval();
+      if (['judge', 'n', 'controls'].includes(t.dataset.ev)) setTimeout(refreshEval);
     } else if (t.dataset.act === 'addto' && t.value) {
       const row = t.closest('.cand'), c = visibleCands()[+row.dataset.i];
       addTo(c, t.value); t.value = '';

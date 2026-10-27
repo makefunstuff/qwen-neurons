@@ -10,6 +10,7 @@ services:
     environment:
       QN_IDLE_TIMEOUT_S: ${QN_IDLE_TIMEOUT_S:-600}
       QN_NEED_MIB: ${QN_NEED_MIB:-10000}
+      QN_GPU_LABEL: ${QN_GPU:-1}                         # messages name the host's GPU, not the container's cuda:0
     volumes:
       - ${QN_MODEL_DIR:-./models/Qwen3.5-4B}:/model:ro   # local weights, read-only (empty: download from HF)
       - pugs-data:/data                                  # your pugs, prompt sets and gene pool

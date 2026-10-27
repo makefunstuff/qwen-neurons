@@ -4,11 +4,11 @@ const $ = s => document.querySelector(s);
 
 const SCENES = [
   {cap: 'BRAIN HAVE MANY ROCK. ROCK = NEURON.', sub: 'Qwen has 32 layers × 9216 MLP neurons: about 300,000 little rocks.'},
-  {cap: 'WORDS GO UP THROUGH ROCKS. SOME ROCK GLOW.', sub: 'Every word flows up through the layers; each neuron lights up a bit, or a lot.'},
-  {cap: 'THIS ROCK GLOW WHEN BRAIN THINK COOKIE.', sub: 'Some neurons fire for one idea: cookies, pirates, being a GPU…'},
+  {cap: 'WORDS GO UP. SOME ROCK GLOW.', sub: 'Every word flows up through the layers; each neuron lights up a bit, or a lot.'},
+  {cap: 'THIS ROCK GLOW FOR COOKIE.', sub: 'Some neurons fire for one idea: cookies, pirates, being a GPU…'},
   {cap: 'UNGA POKE COOKIE ROCK. EVERY WORD.', sub: 'Steering: add that neuron\'s push to the stream at every token (a dose).'},
   {cap: 'NOW BRAIN THINK COOKIE ALL TIME.', sub: 'One push at the right spot tilts everything after it: a new personality.'},
-  {cap: 'POKE TOO HARD → BRAIN GO LOOP LOOP LOOP.', sub: 'Past a dose of about 1 (as big as the whole stream) it starts to repeat itself.'},
+  {cap: 'POKE TOO HARD → LOOP LOOP LOOP.', sub: 'Past a dose of about 1 (as big as the whole stream) it starts to repeat itself.'},
 ];
 const ROWS = 5, COLS = 9, HOT = [2, 4];   // the cookie rock: row 2, column 4
 
@@ -88,8 +88,10 @@ async function strip(X) {
     img.src = 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(sceneSvg(i, 1.2));
     await img.decode();
     x.drawImage(img, cx, cy, pw, ph);
-    x.fillStyle = '#1d1a22'; x.font = '800 22px "Bricolage Grotesque", system-ui'; x.fillText(`${i + 1}. ${sc.cap}`, cx, cy + ph + 28);
-    x.fillStyle = '#6f6878'; x.font = '400 15px system-ui'; x.fillText(sc.sub.slice(0, 66), cx, cy + ph + 52);
+    x.fillStyle = '#1d1a22'; x.font = '800 18px "Bricolage Grotesque", system-ui';
+    X.wrapText(x, `${i + 1}. ${sc.cap}`, pw, 1).forEach(l => x.fillText(l, cx, cy + ph + 26));
+    x.fillStyle = '#6f6878'; x.font = '400 14px system-ui';
+    X.wrapText(x, sc.sub, pw, 2).forEach((l, j) => x.fillText(l, cx, cy + ph + 46 + j * 18));
   }
   x.font = '600 16px "JetBrains Mono", monospace'; x.fillStyle = '#6f6878';
   x.fillText('Evil Pugs · neuron steering on Qwen3.5-4B · github.com/makefunstuff/qwen-neurons', pad, H - 20);

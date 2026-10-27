@@ -64,6 +64,9 @@ function wiringHtml() {
   const nud = D.nudges.map(g => `<li>🎚️ <b class="mono">L${g.layer} N${g.neuron}</b> dose ${fmt(g.dose)}<button data-rm="nudges:${g.layer}:${g.neuron}">✕</button></li>`).join('');
   const cl = D.clamps.map(c => `<li>✋ <b class="mono">L${c.layer} N${c.neuron}</b> = ${fmt(c.value)}<button data-rm="clamps:${c.layer}:${c.neuron}">✕</button></li>`).join('');
   return `<div class="dbg-card"><b>wiring</b>${pins || nud || cl ? `<ul class="wires">${pins}${nud}${cl}</ul>` : '<p class="muted small">Click a register to 📌 pin it (watch it every token), 🎚️ nudge it (a steering knob) or ✋ set it (overwrite its activation).</p>'}
+    <form class="wire-add" id="wire-add">🎚️ L<input name="layer" type="number" min="0" max="31" value="14" aria-label="layer">
+      N<input name="neuron" type="number" min="0" max="9215" value="8949" aria-label="neuron">
+      <input name="dose" type="number" min="-2" max="2" step="0.1" value="1" aria-label="dose"><button title="Nudge this neuron (a steering knob)">wire</button></form>
     ${pins || nud || cl ? '<button class="link" data-act="clear-wires">clear all</button>' : ''}</div>`;
 }
 function spark(h) {
@@ -169,6 +172,14 @@ export function initDebugger(ctx) {
     if (act === 'continue') return ctl('continue');
     if (act === 'stop') return ctl('stop');
     if (act === 'clear-wires') { D.pins = []; D.nudges = []; D.clamps = []; rewire(); return update('regs'); }
+  });
+  pane.addEventListener('submit', e => {
+    if (e.target.id !== 'wire-add') return;
+    e.preventDefault();
+    const f = new FormData(e.target), L = +f.get('layer'), n = +f.get('neuron'), dose = +f.get('dose');
+    if (!(L >= 0 && L <= 31 && n >= 0 && n <= 9215 && Math.abs(dose) <= 2 && dose)) return X.toast('Layers 0–31, neurons 0–9215, dose −2…2', true);
+    D.nudges = D.nudges.filter(w => !(w.layer === L && w.neuron === n)).concat({layer: L, neuron: n, dose});
+    rewire(); update('regs');
   });
   pane.addEventListener('change', e => {
     if (e.target.id === 'dbg-step') D.stepMode = e.target.checked;

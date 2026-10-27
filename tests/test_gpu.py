@@ -1,3 +1,4 @@
+import pytest
 from qwen_neurons import gpu
 
 SMI = [{"index": 0, "name": "A", "total_mib": 16000, "used_mib": 1500, "free_mib": 14500, "procs": []},
@@ -35,3 +36,16 @@ def test_auto_prefers_mps_on_apple(monkeypatch):
 
 def test_missing_gpu():
     assert not gpu.pick_device("cuda:7", 1, SMI)["ok"]
+
+
+def test_gpu_label_names_the_host_gpu(monkeypatch):
+    import asyncio
+    from qwen_neurons import engine as eng_mod
+    from qwen_neurons.config import Settings
+    s = Settings.load({"QN_DEVICE": "cuda:0", "QN_GPU_LABEL": "1", "QN_NEED_MIB": "99999999"})
+    smi = [{"index": 0, "name": "GPU", "total_mib": 16000, "used_mib": 15000, "free_mib": 1000, "procs": []}]
+    monkeypatch.setattr(eng_mod.gpu, "gpus", lambda: smi)
+    e = eng_mod.Engine(s)
+    with pytest.raises(RuntimeError) as err:     # too full, and the message names the host's GPU 1, not cuda:0
+        asyncio.run(e.ensure_loaded())
+    assert str(err.value).startswith("GPU 1 has 1000 MiB free")
