@@ -22,7 +22,7 @@ from pathlib import Path
 from . import scoring
 
 DEFAULT_KEY_FILE = "~/.config/qwen-neurons/agent.key"
-MAX_STEPS = 16
+MAX_STEPS = 20
 SUMMARY_CHARS = 1400
 
 
@@ -501,9 +501,13 @@ async def run_agent(goal: str, brain, tools: Toolbox, max_steps: int = MAX_STEPS
     msgs = list(history or []) or [{"role": "system", "content": SYSTEM}]
     msgs.append({"role": "user", "content": goal})
     yield {"t": "agent_start", "brain": brain.name, "goal": goal}
-    nudged = tested = False
+    nudged = refused = False
+    tests: list[dict] = []                                  # what test_prediction / evaluate actually measured
     for step in range(max_steps + 1):
         force = "verdict" if step == max_steps else None
+        if step == max_steps - 3 and not tests and msgs[-1]["role"] == "tool":
+            msgs.append({"role": "user", "content": "Only 3 steps left: run test_prediction on your best candidate "
+                         "now, then call verdict with the result as measured."})
         yield {"t": "agent_think", "step": step + 1}
         try:
             reply = await brain.chat(msgs, TOOLS, force)
@@ -526,12 +530,12 @@ async def run_agent(goal: str, brain, tools: Toolbox, max_steps: int = MAX_STEPS
             for c in calls]})
         for c in calls:
             yield {"t": "tool_call", "id": c["id"], "name": c["name"], "args": c["arguments"]}
-            if c["name"] == "verdict" and not tested and step < max_steps:
+            if c["name"] == "verdict" and not tests and not refused and step < max_steps:
                 msgs.append({"role": "tool", "tool_call_id": c["id"], "content": "error: run test_prediction first "
                              "(a prediction on held-out neutral questions), then call verdict with its result"})
                 yield {"t": "tool_result", "id": c["id"], "name": "verdict", "ok": False,
                        "summary": "refused: no test_prediction yet", "data": None}
-                tested = True                               # ask once; a stubborn brain may still conclude
+                refused = True                              # ask once; a stubborn brain may still conclude
                 continue
             if c["name"] == "verdict":
                 try:
@@ -539,8 +543,18 @@ async def run_agent(goal: str, brain, tools: Toolbox, max_steps: int = MAX_STEPS
                 except (ValueError, KeyError, TypeError) as e:
                     msgs.append({"role": "tool", "tool_call_id": c["id"], "content": f"error: {e}"})
                     continue
-                yield {"t": "verdict", **{k: v.get(k, "") for k in ("name", "trait", "input_evidence", "direct_effect",
-                                                                      "downstream_effect", "test", "confidence")}, "genes": v["genes"]}
+                out = {k: str(v.get(k) or "") for k in ("name", "trait", "input_evidence", "direct_effect",
+                                                         "downstream_effect", "test", "confidence")}
+                key = sorted((g["layer"], g["neuron"]) for g in v["genes"])
+                same = [t for t in tests if sorted((g["layer"], g["neuron"]) for g in t["genes"]) == key]
+                if same:                                    # the measured numbers travel with the verdict
+                    out["measured"] = same[-1]
+                elif tests:
+                    out["measured"] = {**tests[-1], "other_genes": True}
+                else:                                       # no test ran: say so, whatever the brain wrote
+                    out.update(test=f"not tested (the agent's own note: {out['test'] or 'none'})", confidence="low",
+                               untested=True)
+                yield {"t": "verdict", **out, "genes": v["genes"]}
                 yield {"t": "agent_end", "steps": step + 1, "reason": "verdict"}
                 return
             summary, ok, data = "", True, None
@@ -552,7 +566,12 @@ async def run_agent(goal: str, brain, tools: Toolbox, max_steps: int = MAX_STEPS
                         yield {**ev, "id": c["id"]}
             except Exception as e:  # noqa: BLE001 - the agent reads the error and can try something else
                 summary, ok = f"error: {e}", False
-            tested = tested or (c["name"] in ("test_prediction", "evaluate") and ok)
+            if ok and c["name"] == "test_prediction":
+                tests.append({"kind": "test", "genes": genes(c["arguments"]["genes"]), "prediction": data.get("prediction", ""),
+                              "steered": data["hits"][0], "plain": data["plain"], "n": data["n"]})
+            elif ok and c["name"] == "evaluate":
+                tests.append({"kind": "score card", "genes": data["genes"], "steered": data["trait"], "plain": data["normal"],
+                              "n": data["n"], "p": data["p"], "passed": data.get("passed", False)})
             yield {"t": "tool_result", "id": c["id"], "name": c["name"], "ok": ok, "summary": summary, "data": data}
             msgs.append({"role": "tool", "tool_call_id": c["id"], "content": summary})
     yield {"t": "agent_end", "steps": max_steps + 1, "reason": "out of steps"}

@@ -79,12 +79,22 @@ function itemHtml(it) {
   if (it.t === 'error') return `<div class="a-row a-err">⚠️ ${esc(it.msg)}</div>`;
   return '';
 }
+function measuredText(v) {
+  const m = v.measured;
+  if (!m) return v.untested ? 'measured: no test ran, so this verdict is untested' : '';
+  return `measured (${m.kind === 'test' ? 'held-out neutral questions' : 'score card'}${m.other_genes ? ', on other genes' : ''}): steered ${m.steered}/${m.n} vs plain ${m.plain}/${m.n}${m.p != null ? ` · p = ${m.p.toPrecision(2)}` : ''}`;
+}
+function measuredHtml(v) {
+  const t = measuredText(v);
+  return t ? `<div class="verdict-test ${v.measured && v.measured.steered > v.measured.plain ? 'ok' : 'no'}">📏 ${esc(t)}</div>` : '';
+}
 function verdictHtml(v) {
   const conf = {high: '🟢 high', medium: '🟡 medium', low: '🔴 low'}[v.confidence] || '';
   const row = (icon, title, text) => text ? `<div class="v-row"><span>${icon}</span><div><b>${title}</b><p>${esc(text)}</p></div></div>` : '';
   return `<div class="verdict"><div class="v-top">${detective('happy')}<div><p class="kicker">verdict${conf ? ' · confidence ' + conf : ''}</p>
       <h3>${esc(v.name || 'unnamed')}</h3><div class="v-genes">${geneChips(v.genes)}</div><p class="v-trait">“${esc(v.trait || '')}”</p></div></div>
     ${row('👂', 'Input evidence', v.input_evidence)}${row('✍️', 'Direct effect', v.direct_effect)}${row('🌊', 'Downstream effect', v.downstream_effect)}${row('🧪', 'Test', v.test)}
+    ${measuredHtml(v)}
     <div class="row v-btns"><button class="cta alt2" data-act="v-try">▶ Try it</button><button class="btn" data-act="v-score" title="Hand it to the Lab's evaluate mode">🧪 Score card</button>
       <button class="btn" data-act="v-pug" title="Keep it as a new pug in your zoo">🐶 Make it a pug</button><button class="btn" data-act="v-share">📸 copy card</button></div></div>`;
 }
@@ -134,7 +144,7 @@ async function shareVerdict(v) {
   x.font = '600 22px "JetBrains Mono", monospace'; x.fillStyle = '#a0784a'; x.fillText(v.genes.map(geneLabel).join(' · ').slice(0, 60), 250, 182);
   x.font = 'italic 22px system-ui'; x.fillStyle = '#6f6878'; x.fillText(`“${String(v.trait).slice(0, 80)}”`, 250, 214);
   let y = 262;
-  for (const [title, text] of [['👂 Input evidence', v.input_evidence], ['✍️ Direct effect', v.direct_effect], ['🌊 Downstream', v.downstream_effect], ['🧪 Test', v.test]]) {
+  for (const [title, text] of [['👂 Input evidence', v.input_evidence], ['✍️ Direct effect', v.direct_effect], ['🌊 Downstream', v.downstream_effect], ['🧪 Test', v.test], ['📏 Measured', measuredText(v)]]) {
     if (!text) continue;
     x.fillStyle = '#1d1a22'; x.font = '700 20px system-ui'; x.fillText(title, 72, y);
     x.font = '400 18px system-ui'; x.fillStyle = '#3b3644';

@@ -271,3 +271,24 @@ def test_search_results_tell_the_sign():
     evs, *_ = run(brain, max_steps=1)
     s = next(e for e in evs if e["t"] == "tool_result")["summary"]
     assert "L17 N9209 side + score 18.2" in s and "try dose +0.8" in s and "L19 N7839 side - score 9.1" in s and "try dose -0.8" in s
+
+
+def test_an_untested_verdict_says_so():
+    g = [{"layer": 26, "neuron": 589, "dose": 0.8}]
+    brain = ScriptedBrain([{"content": "", "tool_calls": [call("lens", layer=26, neuron=589)]} for _ in range(4)]
+                          + [{"content": "", "tool_calls": [call("verdict", name="hidden", genes=g, trait="t", direct_effect="d",
+                                                                 test="4/5 showed it", confidence="high")]}])
+    evs, *_ = run(brain, max_steps=4)
+    v = evs[-2]
+    assert v["t"] == "verdict" and v["untested"] and v["confidence"] == "low" and v["test"].startswith("not tested")
+    assert "4/5 showed it" in v["test"] and "measured" not in v
+    assert any("Only 3 steps left" in m["content"] for m in brain.seen[1][0] if m["role"] == "user")
+
+
+def test_a_tested_verdict_carries_the_measurement():
+    g = [{"layer": 24, "neuron": 3102, "dose": 0.8}]
+    brain = ScriptedBrain([{"content": "", "tool_calls": [call("test_prediction", genes=g, prediction="cookies", keywords=["cookie"])]},
+                           {"content": "", "tool_calls": [call("verdict", name="cookie", genes=g, trait="t", direct_effect="d", test="t")]}])
+    evs, *_ = run(brain)
+    m = evs[-2]["measured"]
+    assert (m["kind"], m["steered"], m["plain"], m["n"]) == ("test", 3, 0, 4) and "untested" not in evs[-2]
