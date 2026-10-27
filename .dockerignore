@@ -1,0 +1,10 @@
+.git
+.venv
+.uv
+data
+media
+models
+tests
+config.local.env
+.env
+**/__pycache__

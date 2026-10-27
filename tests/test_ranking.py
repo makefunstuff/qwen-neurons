@@ -45,3 +45,29 @@ def test_resid_metric_weights_by_column_norm():
         rank_neurons(a, b, layers=[13, 14], metric="resid")
     with pytest.raises(ValueError):
         rank_neurons(a, b, layers=[13, 14], metric="nope")
+
+
+def test_writer_scores_find_the_neuron_that_writes_the_difference():
+    from qwen_neurons.ranking import rank_neurons, writer_scores
+    torch.manual_seed(0)
+    W = torch.randn(16, 40)
+    diff = (-3 * W[:, 7]).unsqueeze(0)               # set A sits along -W[:, 7]
+    cos = writer_scores([W], diff)
+    assert cos.shape == (1, 40) and int(cos[0].abs().argmax()) == 7 and cos[0, 7] < -0.99
+    a, b = torch.zeros(3, 1, 40), torch.zeros(3, 1, 40)
+    res = rank_neurons(a, b, [5], metric="writer", top_k=1, writer=cos)
+    assert res["top"][0]["neuron"] == 7 and res["top"][0]["dose"] < 0 and res["top"][0]["layer"] == 5
+
+
+def test_writer_scores_ignore_outlier_dimensions_when_scaled():
+    from qwen_neurons.ranking import writer_scores
+    torch.manual_seed(1)
+    W = torch.randn(16, 40)
+    W[0, 3] = 50.0                                    # neuron 3 writes a huge outlier dimension
+    diff = torch.zeros(1, 16); diff[0, 0] = 100.0     # the raw difference is all outlier...
+    diff[0] += 2 * W[:, 9] / W[:, 9].norm()           # ...plus the real persona direction
+    raw = writer_scores([W], diff)
+    std = torch.ones(1, 16); std[0, 0] = 1000.0       # dimension 0 swings wildly on every token
+    scaled = writer_scores([W], diff, std)
+    assert int(raw[0].abs().argmax()) == 3
+    assert int(scaled[0].abs().argmax()) == 9

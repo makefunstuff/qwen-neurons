@@ -1,0 +1,28 @@
+# docker compose up  →  http://127.0.0.1:8765
+# Settings come from a .env file next to this one (gitignored; see .env.example) or the environment.
+# The model loads on the first message and unloads after QN_IDLE_TIMEOUT_S, so the idle container holds no VRAM.
+services:
+  evil-pugs:
+    build: .
+    image: evil-pugs:local
+    ports:
+      - "${QN_BIND:-127.0.0.1}:${QN_PORT:-8765}:8765"
+    environment:
+      QN_IDLE_TIMEOUT_S: ${QN_IDLE_TIMEOUT_S:-600}
+      QN_NEED_MIB: ${QN_NEED_MIB:-10000}
+    volumes:
+      - ${QN_MODEL_DIR:-./models/Qwen3.5-4B}:/model:ro   # local weights, read-only (empty: download from HF)
+      - pugs-data:/data                                  # your pugs, prompt sets and gene pool
+      - hf-cache:/hf-cache
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              device_ids: ["${QN_GPU:-1}"]                # nvidia-smi index of the GPU to use
+              capabilities: [gpu]
+    restart: unless-stopped
+
+volumes:
+  pugs-data:
+  hf-cache:

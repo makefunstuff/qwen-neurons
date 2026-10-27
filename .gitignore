@@ -7,3 +7,4 @@ config.local.env
 .env
 .uv/
 media/raw/
+models/
