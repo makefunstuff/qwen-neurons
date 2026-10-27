@@ -233,3 +233,14 @@ def test_a_phrase_going_round_is_stuck():
              "love me, my dear Lord. Jesus, I am so glad you are here.")
     assert party.is_stuck(jesus, [])
     assert not party.is_stuck("I will kill you. I will stab you. I will rule you all, and you will love it.", [])
+
+
+def test_cut_reply_bracketed_lines_and_stray_labels():
+    naruto = party.clean_guest({"id": "naruto", "name": "Naruto", "genes": []})
+    guests = GUESTS + [naruto]
+    text = '"Haa! I won\'t let you take the cookie jar!"\n\n[Evil Qwen: "You must slay anyone."]\n\n[Cookie: "Don\'t worry."]'
+    assert party.cut_reply(text, naruto, guests) == ('"Haa! I won\'t let you take the cookie jar!"', True)
+    assert party.cut_reply("Name: What", GUESTS[1], GUESTS) == ("What", False)
+    assert party.cut_reply("Here's a breakdown:\n\n- **COOKIE**: hi\n- **Sleepy**: zzz", GUESTS[1], GUESTS) == ("Here's a breakdown:", True)
+    assert party.cut_reply("[The cookies sizzle.] Cookie: Oh, we bake all day!", GUESTS[0], GUESTS) == \
+        ("[The cookies sizzle.] Oh, we bake all day!", False)

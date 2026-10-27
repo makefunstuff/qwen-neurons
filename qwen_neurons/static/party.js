@@ -364,9 +364,17 @@ function cast() {
 async function card() {
   const items = shareEntries();
   if (!items.some(e => e.kind === 'pug')) return X.toast('Nobody has said anything yet', true);
-  const W = 1200, top = 190, foot = 70, maxH = 2200;
+  const W = 1200, foot = 70, maxH = 2200;
   const imgs = await guestImages();
   const m = document.createElement('canvas').getContext('2d');
+  m.font = '700 15px "JetBrains Mono", monospace';
+  let rows = 1, rx = 40;
+  for (const g of cast()) {
+    const w = 50 + m.measureText(`${g.name}${g.genes.length ? ' · ' + g.genes.map(geneLabel).join(' ') : ''}`).width;
+    if (rx + w > W - 40 && rx > 40) { rows++; rx = 40; }
+    rx += w + 24;
+  }
+  const top = 190 + (rows - 1) * 50;
   let h = top, shown = 0;
   for (const e of items) { const d = drawLine(m, e, 0, W, imgs, {draw: false}); if (h + d > maxH - foot - 40) break; h += d; shown++; }
   const more = shown < items.length;
@@ -376,13 +384,13 @@ async function card() {
   cardBg(x, W, H);
   x.fillStyle = '#1d1a22'; x.font = '800 44px "Bricolage Grotesque", system-ui'; x.fillText(`${P.emoji} ${P.title}`, 40, 70);
   x.font = '500 21px system-ui'; x.fillStyle = '#6f6878'; x.fillText(X.wrapText(x, P.scene, W - 80, 1)[0] || '', 40, 106);
-  let gx = 40;
+  let gx = 40, gy = 124;
+  x.font = '700 15px "JetBrains Mono", monospace';
   for (const g of cast()) {
-    x.drawImage(imgs[g.id], gx, 124, 44, 44);
-    x.font = '700 15px "JetBrains Mono", monospace'; x.fillStyle = '#1d1a22';
-    const label = `${g.name}${g.genes.length ? ' · ' + g.genes.map(geneLabel).join(' ') : ''}`;
-    x.fillText(label.slice(0, 34), gx + 50, 152); gx += 60 + Math.min(34, label.length) * 9.2;
-    if (gx > W - 200) break;
+    const label = `${g.name}${g.genes.length ? ' · ' + g.genes.map(geneLabel).join(' ') : ''}`, w = 50 + x.measureText(label).width;
+    if (gx + w > W - 40 && gx > 40) { gx = 40; gy += 50; }
+    x.drawImage(imgs[g.id], gx, gy, 44, 44);
+    x.fillStyle = '#1d1a22'; x.fillText(label, gx + 50, gy + 28); gx += w + 24;
   }
   let y = top;
   for (const e of items.slice(0, shown)) y += drawLine(x, e, y, W, imgs);
@@ -417,15 +425,17 @@ export async function recordClip({maxSecs = 40, download = true} = {}) {
     x.font = '500 22px system-ui'; x.fillStyle = '#6f6878'; x.fillText(X.wrapText(x, P.scene, S - 80, 1)[0] || '', 40, 106);
     const cur = tl.findLast(s => now >= s.start) || null;
     const speaking = cur && cur.e.kind === 'pug' && now < cur.start + cur.type ? cur.e.who : null;
-    const n = people.length, slot = Math.min(230, (S - 80) / n);
+    const n = people.length, slot = Math.min(230, (S - 80) / n), x0 = (S - slot * n) / 2;
     people.forEach((g, i) => {
-      const cx = 40 + slot * i + slot / 2, on = speaking === g.id, look = lookOfGuest(g);
+      const cx = x0 + slot * i + slot / 2, on = speaking === g.id, look = lookOfGuest(g);
       const bob = on ? Math.sin(now * 18) * 6 : Math.sin(now * 2 + i) * 2, size = on ? 132 : 112;
       if (on) { x.fillStyle = X.mix(look.color, '#ffffff', 0.5); x.beginPath(); x.arc(cx, 186, 76, 0, Math.PI * 2); x.fill(); }
       const img = on && Math.floor(now * 8) % 2 ? talk[g.id] : still[g.id];
       x.drawImage(img, cx - size / 2, 186 - size / 2 + bob, size, size);
-      x.font = '700 18px "Bricolage Grotesque", system-ui'; x.fillStyle = '#1d1a22'; x.textAlign = 'center';
-      x.fillText(g.name.slice(0, 16), cx, 276); x.textAlign = 'left';
+      let fs = 18;
+      do { x.font = `700 ${fs}px "Bricolage Grotesque", system-ui`; } while (x.measureText(g.name).width > slot - 12 && --fs > 11);
+      x.fillStyle = '#1d1a22'; x.textAlign = 'center';
+      x.fillText(g.name, cx, 276, slot - 8); x.textAlign = 'left';
       const rx = cur && cur.e.kind === 'pug' && now >= cur.start + cur.type ? cur.e.reactions?.find(r => r.who === g.id) : null;
       if (rx) {
         const k = Math.min(1, (now - cur.start - cur.type) / 0.25);
@@ -502,7 +512,11 @@ export async function initParty(ctx) {
     P.scenarios = r.scenarios; P.maxGuests = r.max_guests;
   } catch (err) { X.toast('Could not load the party scenarios: ' + err.message, true); }
   const pane = $('#pane-party');
-  document.addEventListener('qn-tab', e => { if (e.detail === 'party') render(); });
+  document.addEventListener('qn-tab', e => {
+    document.body.classList.toggle('party-mode', e.detail === 'party');   // the party takes the whole width
+    if (e.detail === 'party') render();
+  });
+  if (!$('#pane-party').hidden) { document.body.classList.add('party-mode'); render(); }
   pane.addEventListener('click', e => {
     const b = e.target.closest('button'); if (!b) return;
     if (b.dataset.sc) return startScenario(b.dataset.sc);
@@ -568,5 +582,5 @@ export async function initParty(ctx) {
     const inp = $('#party-input'); say(inp.value); inp.value = '';
   });
   $('#clip-dlg').addEventListener('click', e => { if (e.target.closest('[data-act="close-clip"]') || e.target === $('#clip-dlg')) $('#clip-dlg').close(); });
-  window.__party = P;   // for the media scripts and the curious
+  window.__party = P; window.__partyCreature = creature;   // for the media scripts and the curious
 }

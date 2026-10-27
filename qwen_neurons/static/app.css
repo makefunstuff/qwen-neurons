@@ -627,3 +627,7 @@ input[type=range].dose.snap::-webkit-slider-thumb { transform: scale(1.35); }
 .party-title > div { min-width: 0; }
 .party-title h2 { overflow-wrap: anywhere; }
 .game > .zoo { min-width: 0; }
+body.party-mode .game { grid-template-columns: minmax(0, 1fr); max-width: 1180px; }
+body.party-mode #stage { display: none; }
+body.party-mode .party-stage { height: min(60vh, 700px); }
+.pmsg .bubble { max-width: min(760px, 88%); }

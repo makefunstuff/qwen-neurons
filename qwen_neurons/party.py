@@ -178,12 +178,14 @@ def chaos_temperature(chaos: float) -> float:
 
 
 def cut_reply(text: str, me: dict, guests: list[dict]) -> tuple[str, bool]:
-    """Clean a reply: drop a leading 'MyName:' and cut where the pug starts writing someone else's line
-    ('\nCookie:', 'Human:', '[Narrator'). Returns (text, was_cut)."""
-    mine = [me["name"]] + [w for w in me["name"].split() if len(w) >= 3]   # 'Evil Qwen:' or just 'Qwen:'
-    t = re.sub(r"^\s*(?:\*\*)?(?:" + "|".join(map(re.escape, mine)) + r")(?:\*\*)?\s*:\s*", "", text, flags=re.I)
+    """Clean a reply: drop its own 'MyName:' labels (or 'Name:'), and cut where the pug starts writing someone
+    else's line ('\nCookie:', '[Evil Qwen: "…"]', 'Human:'). Returns (text, was_cut)."""
+    mine = [me["name"]] + [w for w in me["name"].split() if len(w) >= 3] + ["Name", "Reply", "Response"]
+    label = r"(?:\*\*)?(?:" + "|".join(map(re.escape, mine)) + r")(?:\*\*)?\s*:\s*"
+    t = re.sub(r"(^\s*|\]\s*|\n\s*)" + label, r"\1", text, flags=re.I).strip()
     names = [g["name"] for g in guests if g["id"] != me["id"]] + ["Human", "Narrator", "Audience"]
-    pat = r"(?:^|\n)\s*(?:\*\*)?(?:" + "|".join(re.escape(n) for n in names) + r")(?:\*\*)?\s*(?:\([^)]*\))?\s*:"
+    pat = (r"(?:^|\n)\s*(?:[-*•]\s+)?[\[(]?\s*(?:\*\*)?(?:" + "|".join(re.escape(n) for n in names) +
+           r")(?:\*\*)?\s*(?:\([^)]*\))?\s*:")
     m = re.search(pat, t, re.I)
     if m and m.start() == 0:  # it opened with someone else's label: drop the label, keep the line
         t = t[m.end():].lstrip()
