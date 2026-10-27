@@ -174,7 +174,8 @@ A dose of 1 is a push as large as the whole residual stream. The chaos meter sum
 | `QN_DEVICE` | `auto` | `auto` (the NVIDIA GPU with the most free memory, else MPS, else CPU), `cuda:N` (nvidia-smi numbering), `mps`, `cpu` |
 | `QN_IDLE_TIMEOUT_S` | `600` | unload after this many idle seconds |
 | `QN_NEED_MIB` | `10000` | free VRAM needed before loading on a GPU |
-| `QN_DATA_DIR` | `./data` | your bred pugs |
+| `QN_DATA_DIR` | `./data` | your bred pugs, prompt sets and gene pool |
+| `QN_GPU_LABEL` | (none) | the GPU's name in messages; compose sets it to the host's index |
 
 ### With Docker Compose
 
