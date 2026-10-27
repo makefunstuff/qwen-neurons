@@ -137,3 +137,41 @@ def group_by_layer(knobs: list[Knob]) -> dict[int, list[Knob]]:
     for k in knobs:
         g[k.layer].append(k)
     return dict(g)
+
+
+class PugSwitch:
+    """Steering hooks that stay on while the pushes behind them change: the 🎉 Pug Party swaps the speaking pug's
+    knobs in (and each reacting pug's after it) without reloading anything or re-registering hooks per pug.
+
+    with PugSwitch(down) as sw:
+        sw.wear(pushes_a); ... generate ...
+        sw.wear(pushes_b); ... generate ...   # layers A used and B doesn't get no push
+
+    A layer's hook is registered the first time some pug needs it and stays until the block ends."""
+
+    def __init__(self, modules: dict[int, torch.nn.Module]):
+        self.modules = modules
+        self.current: dict[int, torch.Tensor] = {}
+        self.handles: dict[int, object] = {}
+        self.wearing = None
+
+    def _hook(self, L: int):
+        def hook(module, inputs, out):
+            v = self.current.get(L)
+            return out + v.to(device=out.device, dtype=out.dtype) if v is not None else out
+        return hook
+
+    def wear(self, pushes: dict[int, torch.Tensor], who=None) -> None:
+        for L in pushes:
+            if L not in self.handles:
+                self.handles[L] = self.modules[L].register_forward_hook(self._hook(L))
+        self.current, self.wearing = dict(pushes), who
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *exc):
+        for h in self.handles.values():
+            h.remove()
+        self.handles.clear()
+        self.current, self.wearing = {}, None

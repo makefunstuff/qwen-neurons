@@ -142,3 +142,20 @@ def test_personality_test_job(client):
     assert job["kind"] == "test" and len(job["creatures"]) == 2 and len(job["questions"]) == 3 and job["tame"]
     assert client.post("/api/test", json={"creatures": [[{"layer": 1, "neuron": 2, "dose": 0}]]}).status_code == 400
     assert client.post("/api/test", json={"creatures": [[]] * 9}).status_code == 422
+
+
+def test_party_scenarios_and_turn(client):
+    sc = client.get("/api/party/scenarios").json()
+    assert len(sc["scenarios"]) >= 8 and "😂" in sc["reactions"]
+    body = {"guests": [{"id": "cookie", "name": "Cookie", "genes": [{"layer": 24, "neuron": 3102, "dose": 0.8}]},
+                       {"id": "sleepy", "name": "Sleepy", "genes": [{"layer": 19, "neuron": 4699, "dose": -0.8}]}],
+            "scene": "a dinner party", "transcript": [{"kind": "pug", "who": "cookie", "name": "Cookie", "text": "Cookies?"}],
+            "chaos": 0.5, "seed": 3}
+    r = client.post("/api/party/turn", json=body)
+    assert r.status_code == 200 and r.text.startswith('data: {"t": "speaker", "who": "sleepy"')
+    job = client.seen[-1]
+    assert job["kind"] == "party" and job["speaker"] == "sleepy" and job["genes"] == [{"layer": 19, "neuron": 4699, "dose": -0.8}]
+    assert [r["id"] for r in job["reactors"]] == ["cookie"] and job["messages"][-1]["content"] == "Cookie: Cookies?"
+    dup = {**body, "guests": body["guests"][:1] * 2}
+    assert client.post("/api/party/turn", json=dup).status_code == 400
+    assert client.post("/api/party/turn", json={**body, "guests": body["guests"] * 3}).status_code == 422

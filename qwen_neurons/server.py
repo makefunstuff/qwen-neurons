@@ -10,7 +10,7 @@ from fastapi.responses import FileResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
-from . import discovery, genetics, scoring
+from . import discovery, genetics, party, scoring
 from .config import Settings
 from .creatures import Zoo, ancestry_node, clean
 from .discovery import GenePool, SetStore
@@ -129,6 +129,34 @@ class DebugCtl(BaseModel):
     breakpoints: Breakpoints | None = None
 
 
+class PartyGuest(BaseModel):
+    id: str = Field(min_length=1, max_length=80)
+    name: str = Field(min_length=1, max_length=60)
+    genes: list[Gene] = Field(default_factory=list, max_length=8)
+    role: str = Field("", max_length=80)
+
+
+class PartyLine(BaseModel):
+    kind: str = Field(pattern="^(pug|human|narrator|event)$")
+    who: str = Field("", max_length=80)
+    name: str = Field("", max_length=60)
+    text: str = Field(max_length=4000)
+
+
+class PartyTurnReq(BaseModel):
+    guests: list[PartyGuest] = Field(min_length=1, max_length=party.MAX_GUESTS)
+    scene: str = Field("", max_length=600)
+    transcript: list[PartyLine] = Field(default_factory=list, max_length=400)
+    host: str | None = None
+    speaker: str | None = None          # force who talks next (the "your turn" button)
+    chaos: float = Field(0.5, ge=0, le=1)
+    max_new_tokens: int = Field(110, ge=16, le=300)
+    policy: str = Field("steer", pattern="^(steer|stop)$")
+    strikes: dict[str, int] = Field(default_factory=dict)   # stuck turns in a row, per guest id
+    reactions: bool = True
+    seed: int = 0
+
+
 def sse(ev: dict) -> str:
     return f"data: {json.dumps(ev)}\n\n"
 
@@ -191,11 +219,13 @@ def create_app(s: Settings | None = None) -> FastAPI:
         engine.stop()
         return {"ok": True}
 
-    def run_job(job: dict) -> StreamingResponse:
+    def run_job(job: dict, first: dict | None = None) -> StreamingResponse:
         if engine.job_lock.locked():
             raise HTTPException(409, "Qwen is busy with another job; stop it first or wait a moment.")
 
         async def stream():
+            if first:
+                yield sse(first)
             try:
                 async for ev in engine.run(job):
                     yield sse(ev)
@@ -272,6 +302,24 @@ def create_app(s: Settings | None = None) -> FastAPI:
         if not engine.control(req.model_dump(exclude_none=True)):
             raise HTTPException(409, "no debugger session is running")
         return {"ok": True}
+
+    @app.get("/api/party/scenarios")
+    def party_scenarios():
+        return {"scenarios": party.SCENARIOS, "reactions": party.REACTIONS, "max_guests": party.MAX_GUESTS,
+                "max_strikes": party.MAX_STRIKES, "steer_down": party.STEER_DOWN}
+
+    @app.post("/api/party/turn")
+    async def party_turn(req: PartyTurnReq):
+        ids = [g.id for g in req.guests]
+        if len(set(ids)) != len(ids):
+            raise HTTPException(400, "every guest needs its own id")
+        plan = party.plan_turn([g.model_dump() for g in req.guests], [t.model_dump() for t in req.transcript],
+                               req.scene, host=req.host, chaos=req.chaos, seed=req.seed + len(req.transcript),
+                               speaker=req.speaker, reactions=req.reactions)
+        job = {"kind": "party", **plan, "max_new_tokens": req.max_new_tokens, "policy": req.policy,
+               "strikes": min(20, max(0, req.strikes.get(plan["speaker"], 0))), "seed": req.seed + len(req.transcript)}
+        return run_job(job, {"t": "speaker", "who": plan["speaker"], "name": plan["name"], "genes": plan["genes"],
+                             "temperature": plan["temperature"]})
 
     @app.get("/api/sets")
     def list_sets():
