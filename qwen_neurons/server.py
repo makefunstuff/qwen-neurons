@@ -33,7 +33,7 @@ class Msg(BaseModel):
 
 class GenerateReq(BaseModel):
     messages: list[Msg] = Field(min_length=1, max_length=60)
-    rows: list[list[Gene]] = Field(min_length=1, max_length=4)
+    rows: list[list[Gene]] = Field(min_length=1, max_length=6)
     think: bool = True
     temperature: float = Field(0.7, ge=0, le=2)
     max_new_tokens: int = Field(700, ge=1, le=2000)
@@ -81,6 +81,42 @@ class ScreenReq(BaseModel):
     n: int = Field(3, ge=1, le=len(scoring.SCREEN_QUESTIONS))
     max_new_tokens: int = Field(90, ge=16, le=300)
     seed: int = 0
+
+
+class Clamp(BaseModel):
+    layer: int = Field(ge=0, le=31)
+    neuron: int = Field(ge=0, le=9215)
+    value: float = Field(ge=-100, le=100)
+
+
+class Pin(BaseModel):
+    layer: int = Field(ge=0, le=31)
+    neuron: int = Field(ge=0, le=9215)
+
+
+class Breakpoints(BaseModel):
+    tokens: list[int] = Field(default_factory=list, max_length=50)
+    text: str = Field("", max_length=40)
+
+
+class DebugReq(BaseModel):
+    messages: list[Msg] = Field(min_length=1, max_length=20)
+    knobs: list[Gene] = Field(default_factory=list, max_length=8)
+    clamps: list[Clamp] = Field(default_factory=list, max_length=16)
+    pins: list[Pin] = Field(default_factory=list, max_length=16)
+    breakpoints: Breakpoints = Field(default_factory=Breakpoints)
+    step: bool = False
+    max_new_tokens: int = Field(160, ge=1, le=600)
+    temperature: float = Field(0.7, ge=0, le=2)
+    top: int = Field(6, ge=1, le=12)
+
+
+class DebugCtl(BaseModel):
+    cmd: str = Field(pattern="^(pause|step|continue|stop|update)$")
+    knobs: list[Gene] | None = Field(None, max_length=8)
+    clamps: list[Clamp] | None = Field(None, max_length=16)
+    pins: list[Pin] | None = Field(None, max_length=16)
+    breakpoints: Breakpoints | None = None
 
 
 def sse(ev: dict) -> str:
@@ -208,6 +244,16 @@ def create_app(s: Settings | None = None) -> FastAPI:
                         "questions": scoring.SCREEN_QUESTIONS[:req.n], "max_new_tokens": req.max_new_tokens,
                         "temperature": 0.7, "seed": req.seed})
 
+    @app.post("/api/debug")
+    async def debug(req: DebugReq):
+        return run_job({"kind": "debug", **req.model_dump(), "messages": [m.model_dump() for m in req.messages]})
+
+    @app.post("/api/debug/ctl")
+    def debug_ctl(req: DebugCtl):
+        if not engine.control(req.model_dump(exclude_none=True)):
+            raise HTTPException(409, "no debugger session is running")
+        return {"ok": True}
+
     @app.get("/api/sets")
     def list_sets():
         return sets.all()
@@ -276,7 +322,8 @@ def create_app(s: Settings | None = None) -> FastAPI:
             c["id"] = raw.get("id") if raw.get("id") in saved else None  # unsaved parents live on in the snapshot
             c["builtin"] = bool(raw.get("builtin")) and c["id"] is not None
         rng = random.Random(req.seed)
-        child = genetics.breed(a, b, rng, req.mutation, pool.all() if req.use_pool else None)
+        known = (pool.all() if req.use_pool else []) + genetics.zoo_pool(zoo.all())
+        child = genetics.breed(a, b, rng, req.mutation, known)
         child["ancestry"] = [ancestry_node(c, zoo, 5) for c in (a, b)]
         return child
 

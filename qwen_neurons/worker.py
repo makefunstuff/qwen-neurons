@@ -8,15 +8,17 @@ import time
 import traceback
 
 EXPECTED_BYTES = 9.3e9  # Qwen3.5-4B bf16 safetensors
+PAUSE_TIMEOUT_S = 300   # a debugger session paused this long ends, so the idle unload can happen
 
 
-def main(cfg: dict, jobs, events, cancel) -> None:
+def main(cfg: dict, jobs, events, cancel, ctl=None) -> None:
     if cfg["device"].startswith("cuda:"):
         os.environ["CUDA_DEVICE_ORDER"] = "PCI_BUS_ID"  # match nvidia-smi numbering
         os.environ["CUDA_VISIBLE_DEVICES"] = cfg["device"].split(":")[1]
         cfg = {**cfg, "device": "cuda:0"}
     try:
         w = Worker(cfg, events)
+        w.ctl = ctl
     except Exception as e:  # noqa: BLE001 - everything goes back to the UI
         events.put({"t": "load_error", "msg": f"{type(e).__name__}: {e}", "trace": traceback.format_exc()[-2000:]})
         return
@@ -86,7 +88,8 @@ class Worker:
         self.load_s = round(time.time() - t0, 1)
 
     def run(self, job: dict, cancel) -> None:
-        kinds = {"generate": self.generate, "discover": self.discover, "evaluate": self.evaluate, "screen": self.screen}
+        kinds = {"generate": self.generate, "discover": self.discover, "evaluate": self.evaluate, "screen": self.screen,
+                 "debug": self.debug}
         if job["kind"] not in kinds:
             raise ValueError(f"unknown job {job['kind']}")
         kinds[job["kind"]](job, cancel)
@@ -322,6 +325,151 @@ class Worker:
                             "texts": texts, "tally": hits})
         self.emit(job, {"t": "result", "kind": "screen", "n": done, "plain": hits[0], "hits": hits[1:],
                         "samples": samples[1:], "plain_sample": samples[0]})
+
+
+    # ---- the debugger ---------------------------------------------------------------------------------------
+    def debug(self, job: dict, cancel) -> None:
+        """Token-by-token generation with the MLP neurons as registers.
+
+        job: messages, knobs (steering genes), clamps ([{layer, neuron, value}]: the neuron's activation is set to
+        value), pins ([{layer, neuron}]: always reported), breakpoints {tokens: [i, ...], text: str}, step (pause
+        before every token), max_new_tokens, temperature, top (registers per layer).
+
+        Before sampling token i it can pause (a breakpoint, a step, or a "pause" command): it reports the next-token
+        candidates and every layer's strongest neurons at the current position, then waits on the control queue.
+        "update" (new knobs/clamps/pins) re-runs the whole sequence with the new wiring, the same as steering does
+        in chat (at every token), and reports the new candidates; "step", "continue" and "stop" do what they say."""
+        import queue as _queue
+        from .debugger import DebugState, sample_token, top_candidates, top_registers
+        from .steering import median_resid_norm
+        torch = self.torch
+        ctl = self.ctl
+        while ctl is not None:  # drop commands meant for an earlier session
+            try:
+                ctl.get_nowait()
+            except _queue.Empty:
+                break
+        st = DebugState.from_job(job)
+        acts: dict = {}
+
+        def pre(L):
+            def hook(module, inputs):
+                x = inputs[0]
+                cl = st.clamps_by_layer.get(L)
+                if cl:
+                    x = x.clone()
+                    for n, v in cl:
+                        x[..., n] = v
+                acts[L] = x[0, -1].detach()
+                return (x,) if cl else None
+            return hook
+
+        def post(L):
+            def hook(module, inputs, out):
+                v = st.pushes.get(L)
+                return out + v.to(device=out.device, dtype=out.dtype) if v is not None else out
+            return hook
+        handles = [m.register_forward_pre_hook(pre(L)) for L, m in self.down.items()]
+        handles += [m.register_forward_hook(post(L)) for L, m in self.down.items()]
+        try:
+            ids = self.prompt_ids(job["messages"], False)["input_ids"]
+            seq = ids[0].tolist()
+            n_prompt = len(seq)
+            with torch.no_grad():
+                out = self.model(input_ids=ids, use_cache=True, output_hidden_states=True)
+            meds = {L: median_resid_norm(out.hidden_states[L + 1]) for L in self.down}
+            st.meds = meds
+
+            def wire():
+                st.pushes = {L: v.to(self.device) for L, v in st.build_pushes(
+                    lambda L, n: self.down[L].weight[:, n].detach().float().cpu()).items()}
+
+            def prefill():
+                with torch.no_grad():
+                    return self.model(input_ids=torch.tensor([seq], device=self.device), use_cache=True)
+            wire()
+            if st.pushes or st.clamps_by_layer:
+                out = prefill()  # the prompt pass above was plain (for the medians): redo it wired
+            past, logits = out.past_key_values, out.logits[0, -1].float()
+            text, pause_next = "", bool(job.get("step"))
+            temp, top = float(job.get("temperature", 0.7)), int(job.get("top", 6))
+            for i in range(int(job.get("max_new_tokens", 200))):
+                if cancel.is_set():
+                    break
+                regs = top_registers(acts, top, st.pins)
+                cmd = self._poll_ctl()
+                if cmd and cmd.get("cmd") == "pause":
+                    pause_next = True
+                elif cmd and cmd.get("cmd") == "stop":
+                    break
+                elif cmd and cmd.get("cmd") == "update":
+                    st.update(cmd)
+                    wire()
+                if pause_next or i in st.bp_tokens:
+                    pause_next = False
+                    stop = False
+                    self.emit(job, {"t": "paused", "i": i, "cands": top_candidates(self.tok, logits, 8), "regs": regs})
+                    paused_at = time.time()
+                    while True:
+                        try:
+                            cmd = ctl.get(timeout=0.5)
+                        except _queue.Empty:
+                            if cancel.is_set():
+                                stop = True
+                                break
+                            if time.time() - paused_at > PAUSE_TIMEOUT_S:  # nobody came back: free the GPU
+                                self.emit(job, {"t": "dbg_timeout", "secs": PAUSE_TIMEOUT_S})
+                                stop = True
+                                break
+                            continue
+                        paused_at = time.time()
+                        if cmd.get("cmd") == "update":
+                            st.update(cmd)
+                            wire()
+                            out = prefill()
+                            past, logits = out.past_key_values, out.logits[0, -1].float()
+                            regs = top_registers(acts, top, st.pins)
+                            self.emit(job, {"t": "paused", "i": i, "cands": top_candidates(self.tok, logits, 8),
+                                            "regs": regs, "rewired": True})
+                        elif cmd.get("cmd") == "step":
+                            pause_next = True
+                            break
+                        elif cmd.get("cmd") == "continue":
+                            break
+                        elif cmd.get("cmd") == "stop":
+                            stop = True
+                            break
+                    if stop:
+                        break
+                tok, p = sample_token(torch, logits, temp)
+                if tok in self.eos:
+                    self.emit(job, {"t": "dbg_tok", "i": i, "piece": "", "eos": True, "p": p, "regs": regs})
+                    break
+                seq.append(tok)
+                new_text = self.tok.decode(seq[n_prompt:], skip_special_tokens=True)
+                piece = new_text[len(text):] if new_text.startswith(text) else new_text
+                text = new_text
+                self.emit(job, {"t": "dbg_tok", "i": i, "piece": piece, "tok": tok, "p": p, "regs": regs,
+                                "cands": top_candidates(self.tok, logits, 5)})
+                if st.bp_text and st.bp_text in text[-(len(st.bp_text) + len(piece)):]:
+                    pause_next = True
+                with torch.no_grad():
+                    out = self.model(input_ids=torch.tensor([[tok]], device=self.device), past_key_values=past,
+                                     use_cache=True)
+                past, logits = out.past_key_values, out.logits[0, -1].float()
+        finally:
+            for h in handles:
+                h.remove()
+        self.emit(job, {"t": "dbg_end", "text": text, "tokens": len(seq) - n_prompt})
+
+    def _poll_ctl(self):
+        import queue as _queue
+        if self.ctl is None:
+            return None
+        try:
+            return self.ctl.get_nowait()
+        except _queue.Empty:
+            return None
 
 
 class RowStreamer:

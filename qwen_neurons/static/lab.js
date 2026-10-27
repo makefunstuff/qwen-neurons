@@ -67,6 +67,7 @@ export function showTab(tab) {
   try { localStorage.setItem('qn-tab', tab); } catch {}
   if (tab === 'lab') renderLab();
   if (tab === 'family') renderFamily();
+  document.dispatchEvent(new CustomEvent('qn-tab', {detail: tab}));
 }
 
 // ---------------------------------------------------------------- the lab: discovery
@@ -515,5 +516,5 @@ export async function initLab(ctx) {
   });
   let tab = 'zoo';
   try { tab = localStorage.getItem('qn-tab') || 'zoo'; } catch {}
-  showTab(['zoo', 'lab', 'family'].includes(tab) ? tab : 'zoo');
+  showTab(['zoo', 'lab', 'family', 'debug'].includes(tab) ? tab : 'zoo');
 }

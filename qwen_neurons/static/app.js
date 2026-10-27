@@ -49,7 +49,7 @@ function lookOf(c) {
   return {traits: generate(seed, pins), gear, mood, color};
 }
 const BUILTIN_PINS = {
-  'evil-qwen': {coat: '#5A5A64', eyes: 'round', accessory: 'none', tongue: 'none'}, unicorn: {coat: '#B8A1E8'}, kawaii: {coat: '#F2C6D0'},
+  'evil-qwen': {coat: '#5A5A64', eyes: 'round', accessory: 'none', tongue: 'none'}, conspiracy: {coat: '#D9CFC0', tongue: 'none'}, unicorn: {coat: '#B8A1E8'}, kawaii: {coat: '#F2C6D0'},
   tears: {coat: '#8FB8DE', tongue: 'none'}, meme: {coat: '#C6F432'}, fate: {coat: '#5A5A64'}, sleepy: {coat: '#D9CFC0', accessory: 'none'},
   cookie: {coat: '#E9A76A', tongue: 'blep'}, jesus: {coat: '#E8C08A', accessory: 'none'}, 'all-caps': {accessory: 'none'},
   superhero: {accessory: 'none'}, naruto: {accessory: 'none'}, paws: {coat: '#E9A76A'}, protagonist: {accessory: 'none'},
@@ -131,7 +131,8 @@ function scoreHtml(c) {
     return `<div class="score"><b>${c.score.trait}<small>/${c.score.n}</small></b><div class="bar"><i style="width:${p}%"></i></div>
       <div class="normal">normal: ${c.score.normal}/${c.score.n}</div></div>`;
   }
-  if (c.builtin) return `<div class="lineage">the original villain · loops a lot</div>`;
+  if (c.id === 'evil-qwen') return `<div class="lineage">the original villain · loops a lot</div>`;
+  if (c.builtin) return `<div class="lineage">${esc(c.tagline || 'a joke personality')}</div>`;
   const par = c.parent_names?.length ? `${esc(c.parent_names[0])} × ${esc(c.parent_names[1])}` : 'hand-mixed';
   const line = `<div class="lineage">Gen ${c.generation || 0} · ${par}${c.rating ? ' · ' + '★'.repeat(c.rating) : ''}</div>`;
   if (c.score && Number.isFinite(c.score.trait) && c.score.n) {
@@ -174,7 +175,7 @@ async function loadZoo() {
   for (const c of S.creatures.filter(c => c.builtin)) {
     for (const g of c.genes) {
       const acc = c.look?.acc;
-      S.geneInfo[geneKey(g)] = {gear: acc === 'horns' ? ['horns'] : acc ? [acc] : [], mood: c.look?.mood, color: c.look?.color, name: c.name};
+      S.geneInfo[geneKey(g)] = {gear: acc === 'tinfoil' ? ['tinfoil', 'pinboard'] : acc ? [acc] : [], mood: c.look?.mood, color: c.look?.color, name: c.name};
     }
   }
   renderZoo();

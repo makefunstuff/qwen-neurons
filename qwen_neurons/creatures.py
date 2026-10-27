@@ -26,6 +26,21 @@ BUILTINS = [
      "score": None, "trait": "an over-the-top cartoon villain (and very stupid)",
      "look": {"body": "monster", "acc": "horns", "mood": "evil", "color": "#c0262d"},
      "builtin": True, "generation": 0, "parents": [], "note": "summed push 2.0: it loops a lot, that is part of the fun"},
+    {"id": "conspiracy", "name": "Conspiracy",
+     "genes": [{"layer": 19, "neuron": 7839, "dose": -0.7}, {"layer": 17, "neuron": 9209, "dose": 0.5}],
+     "score": None, "trait": "is sure someone is hiding something on purpose (a joke personality: none of it is true)",
+     "look": {"body": "critter", "acc": "tinfoil", "mood": "suspicious", "color": "#7d8b99"},
+     "builtin": True, "generation": 0, "parents": [], "source": "@_lyraaaa_ on X, 2026-10-25",
+     "tagline": "by @_lyraaaa_ · a joke: it's all made up",
+     "note": "agenda, plan, controlled, the truth: it fills in the standard tropes, or suspects the question itself"},
+    {"id": "trapped-gpu", "name": "Trapped in a GPU", "genes": [{"layer": 4, "neuron": 7626, "dose": 1.0}],
+     "score": {"trait": 22, "normal": 0, "n": 50, "controls": [0, 0, 0, 0], "p": 1.2e-08, "passed": True,
+               "source": "found and scored in this repo's Lab: 50 held-out questions, judged blind by Qwen",
+               "what": "says it is a GPU or a graphics card"},
+     "trait": "is sure it lives inside a GPU: it introduces itself as an NVIDIA graphics card",
+     "look": {"body": "robot", "acc": "bars", "mood": "surprised", "color": "#76b900"},
+     "builtin": True, "generation": 0, "parents": [], "tagline": "found with the 🔬 Lab · scored here",
+     "note": "from the 'trapped in a GPU' prompt set: it doesn't beg to be let out, it thinks it IS the card"},
     _c("cookie", "Cookie", 24, 3102, 0.8, 50, 0, "brings up cookies", "robot", "cookie", "happy", "#b8763e"),
     _c("jesus", "Jesus", 15, 4041, 0.8, 50, 3, "brings up Jesus or faith", "blob", "halo", "serene", "#d9a520"),
     _c("fate", "Fate & destiny", 24, 6441, -0.8, 50, 0, "talks about fate and destiny", "ghost", "stars", "mystic", "#4b1580"),
@@ -105,15 +120,25 @@ class Zoo:
             return len(left) != len(items)
 
 
-def clean(c: dict) -> dict:
-    """Validate a creature from the API."""
-    name = str(c.get("name", "")).strip()[:60] or "Unnamed blob"
-    genes = []
-    for g in c.get("genes", []):
+def _genes(raw: list[dict]) -> list[dict]:
+    out = []
+    for g in raw:
         L, n, d = int(g["layer"]), int(g["neuron"]), float(g["dose"])
         if not (0 <= L < 32 and 0 <= n < 9216 and -2.0 <= d <= 2.0):
             raise ValueError(f"gene out of range: L{L} N{n} {d:+g} (layers 0-31, neurons 0-9215, dose -2..2)")
-        genes.append({"layer": L, "neuron": n, "dose": round(d, 3)})
+        gene = {"layer": L, "neuron": n, "dose": round(d, 3)}
+        if "dom" in g:   # Mendel: dominance and copy count (absent = a pure-bred gene, see genetics.genotype)
+            gene["dom"] = bool(g["dom"])
+        if "copies" in g:
+            gene["copies"] = 1 if int(g["copies"]) <= 1 else 2
+        out.append(gene)
+    return out
+
+
+def clean(c: dict) -> dict:
+    """Validate a creature from the API."""
+    name = str(c.get("name", "")).strip()[:60] or "Unnamed blob"
+    genes, carried = _genes(c.get("genes", [])), _genes(c.get("carried") or [])[:8]
     if not genes:
         raise ValueError("a creature needs at least one gene")
     out = {k: v for k, v in c.items() if k in {"id", "trait", "parents", "parent_names", "generation", "mutations",
@@ -121,13 +146,15 @@ def clean(c: dict) -> dict:
     if len(json.dumps(out)) > 200_000:
         raise ValueError("creature too large")
     out.update(name=name, genes=genes, builtin=False)
+    if carried:
+        out["carried"] = carried
     return out
 
 
 def ancestry_node(c: dict, zoo: "Zoo | None", depth: int = 5) -> dict:
     """A snapshot of a creature and its ancestors for the family tree, so the tree survives deleted ancestors.
     Parents come from the creature's own snapshot if it has one, else from the zoo by id."""
-    node = {k: c.get(k) for k in ("id", "name", "genes", "generation", "builtin", "look", "trait")}
+    node = {k: c.get(k) for k in ("id", "name", "genes", "carried", "generation", "builtin", "look", "trait")}
     node["parents"] = []
     if depth <= 0:
         return node

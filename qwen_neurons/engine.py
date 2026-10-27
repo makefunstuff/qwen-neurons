@@ -21,7 +21,7 @@ class Engine:
         self.s = s
         self.ctx = mp.get_context("spawn")
         self.proc = None
-        self.jobs = self.events = self.cancel = None
+        self.jobs = self.events = self.cancel = self.ctl = None
         self.state = "asleep"       # asleep | loading | ready | error
         self.msg = ""
         self.progress = {"frac": 0.0, "msg": ""}
@@ -56,8 +56,9 @@ class Engine:
             if on_progress:
                 await on_progress(self.progress)
             self.jobs, self.events, self.cancel = self.ctx.Queue(), self.ctx.Queue(), self.ctx.Event()
+            self.ctl = self.ctx.Queue()  # commands for a running job (the debugger's pause / step / rewire)
             cfg = {"model": self.s.model, "device": pick["device"]}
-            self.proc = self.ctx.Process(target=worker.main, args=(cfg, self.jobs, self.events, self.cancel),
+            self.proc = self.ctx.Process(target=worker.main, args=(cfg, self.jobs, self.events, self.cancel, self.ctl),
                                          daemon=True, name="qwen-neurons-model")
             try:
                 self.proc.start()
@@ -121,6 +122,14 @@ class Engine:
                     and time.time() - self.last_used > self.s.idle_timeout_s):
                 await self.unload()
                 self.msg = f"Fell asleep after {self.s.idle_timeout_s}s idle (VRAM freed)"
+
+    def control(self, cmd: dict) -> bool:
+        """Send a command to the running job (only the debugger listens). False if nothing is running."""
+        if self.ctl is None or not self.job_lock.locked():
+            return False
+        self.ctl.put(cmd)
+        self.last_used = time.time()
+        return True
 
     def stop(self) -> None:
         if self.cancel is not None:

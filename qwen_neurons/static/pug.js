@@ -187,6 +187,20 @@ function gearSvg(g, ctx) {
       return {head: rect(50 - rx + 1, eyeCy - 3, rx * 2 - 2, 5, 2.5, '#6b4a2b') + ring(eyeLx, eyeCy, 7, '#c9a227', 3) +
         ring(eyeRx, eyeCy, 7, '#c9a227', 3) + circle(eyeLx, eyeCy, 5.5, '#9ee7ff', ' opacity="0.45"') +
         circle(eyeRx, eyeCy, 5.5, '#9ee7ff', ' opacity="0.45"')};
+    case 'tinfoil':
+      return {head: fillPath(`M${n(50 - rx * 0.78)} ${n(top + 8)}L42 ${n(top - 9)}L46 ${n(top - 6)}L50 ${n(top - 22)}L54 ${n(top - 8)}` +
+        `L58 ${n(top - 11)}L${n(50 + rx * 0.78)} ${n(top + 8)}Z`, '#c9ced6', ' stroke="#8a929c" stroke-width="1.2" stroke-linejoin="round"') +
+        strokePath(`M45 ${n(top - 2)}L49 ${n(top + 3)}L53 ${n(top - 4)}M55 ${n(top + 1)}L58 ${n(top - 3)}`, '#eef1f5', 1.2) +
+        sparkle(50, top - 23, 3, '#ffffff')};
+    case 'bars':
+      return {front: [18, 32, 46, 60, 74, 88].map(x => rect(x - 1.6, 4, 3.2, 96, 1.6, '#4a4f57', ' opacity="0.85"')).join('') +
+        rect(8, 30, 84, 3.4, 1.7, '#4a4f57', ' opacity="0.85"') + rect(8, 84, 84, 3.4, 1.7, '#4a4f57', ' opacity="0.85"') +
+        rect(66, 6, 26, 12, 2, '#76b900') + `<text x="79" y="15" font-family="monospace" font-size="7" font-weight="700" text-anchor="middle" fill="#fff">GPU</text>`};
+    case 'pinboard':
+      return {front: rect(63, 64, 33, 27, 2, '#c8955a', ' stroke="#8a5a2b" stroke-width="2"') +
+        rect(66, 67, 8, 7, 0.5, '#fff8d6') + rect(84, 69, 9, 6, 0.5, '#fff') + rect(73, 80, 9, 7, 0.5, '#fff8d6') +
+        strokePath('M70 70L88 72L77 83L70 70M88 72L91 86', '#d62828', 0.9) +
+        circle(70, 70, 1.7, RED) + circle(88, 72, 1.7, '#4c9eff') + circle(77, 83, 1.7, GOLD) + circle(91, 86, 1.7, RED)};
     case 'partyhat':
       return {head: tri(38, top + 5, 54, top - 26, 64, top + 3, '#8e4ec6') + line(43, top - 2, 59, top - 5, GOLD, 2.4) +
         line(48, top - 12, 57, top - 14, GOLD, 2.4) + circle(54, top - 27, 4, '#ff8fa3')};
@@ -210,7 +224,7 @@ const MOOD_FACE = {
   evil: {brows: 'angry', grin: true}, brave: {brows: 'flat'}, sad: {brows: 'worried'}, sorry: {brows: 'worried'},
   shout: {brows: 'up', mouth: 'open'}, eager: {brows: 'up', grow: 1.18}, love: {eyes: 'hearts', blush: true},
   kawaii: {eyes: 'sparkle', blush: true}, sleepy: {eyes: 'shut'}, serene: {eyes: 'happy'}, smug: {eyes: 'smug'},
-  mystic: {eyes: 'stars'}, happy: {}, derp: {eyes: 'derp'}, surprised: {brows: 'up', mouth: 'open', grow: 1.1},
+  mystic: {eyes: 'stars'}, suspicious: {brows: 'flat', eyes: 'smug'}, happy: {}, derp: {eyes: 'derp'}, surprised: {brows: 'up', mouth: 'open', grow: 1.1},
 };
 export const RANDOM_MOODS = ['happy', 'smug', 'derp', 'surprised', 'eager'];
 

@@ -23,7 +23,9 @@ def test_builtins_match_the_zoo():
         assert (c["score"]["trait"], c["score"]["normal"], c["score"]["n"]) == (score, normal, 50), name
     evil = by_name["Evil Qwen"]["genes"]
     assert evil == [{"layer": 14, "neuron": 8949, "dose": 1.0}, {"layer": 13, "neuron": 7956, "dose": -1.0}]
-    assert len({c["id"] for c in BUILTINS}) == len(BUILTINS) == 22
+    assert len({c["id"] for c in BUILTINS}) == len(BUILTINS) == 24
+    consp = by_name["Conspiracy"]["genes"]   # @_lyraaaa_, 2026-10-25
+    assert consp == [{"layer": 19, "neuron": 7839, "dose": -0.7}, {"layer": 17, "neuron": 9209, "dose": 0.5}]
 
 
 def test_zoo_store_roundtrip(tmp_path):

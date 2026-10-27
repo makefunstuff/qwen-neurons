@@ -35,9 +35,9 @@ def test_status_asleep(client):
 
 def test_creatures_crud(client):
     zoo = client.get("/api/creatures").json()
-    assert zoo[0]["name"] == "Evil Qwen" and len(zoo) == 22
+    assert zoo[0]["name"] == "Evil Qwen" and len(zoo) == 24
     c = client.post("/api/creatures", json={"name": "Pupper", "genes": [{"layer": 1, "neuron": 2, "dose": 0.3}]}).json()
-    assert len(client.get("/api/creatures").json()) == 23
+    assert len(client.get("/api/creatures").json()) == 25
     assert client.post("/api/creatures", json={"name": "x", "genes": [{"layer": 99, "neuron": 2, "dose": 0.3}]}).status_code == 400
     assert client.delete("/api/creatures/cookie").status_code == 403
     assert client.delete(f"/api/creatures/{c['id']}").status_code == 200
@@ -48,7 +48,9 @@ def test_breed(client):
     zoo = {c["id"]: c for c in client.get("/api/creatures").json()}
     child = client.post("/api/breed", json={"a": zoo["cookie"], "b": zoo["evil-qwen"], "seed": 7}).json()
     assert child["generation"] == 1 and child["genes"] and child["name"]
-    assert sum(abs(g["dose"]) for g in child["genes"]) <= 1.42
+    for L in {g["layer"] for g in child["genes"]}:   # per-layer cap only: children keep their traits' doses
+        assert sum(abs(g["dose"]) for g in child["genes"] if g["layer"] == L) <= 1.21
+    assert {(g["layer"], g["neuron"]) for g in child["genes"] + child["carried"]} >= {(24, 3102), (14, 8949), (13, 7956)} - {(24, 3102)}
 
 
 def test_generate_streams_sse_and_drops_zero_doses(client):
@@ -120,3 +122,14 @@ def test_screen_job(client):
     assert job["kind"] == "screen" and job["candidates"] == [[body["candidates"][0]], [body["candidates"][1]]]
     assert len(job["questions"]) == 3
     assert client.post("/api/screen", json={**body, "candidates": []}).status_code == 422
+
+
+def test_debug_job_and_control(client):
+    r = client.post("/api/debug", json={"messages": [{"role": "user", "content": "hi"}],
+                                        "clamps": [{"layer": 3, "neuron": 4, "value": 9}], "breakpoints": {"tokens": [2]}})
+    assert r.status_code == 200
+    job = client.seen[-1]
+    assert job["kind"] == "debug" and job["clamps"][0]["value"] == 9 and job["breakpoints"]["tokens"] == [2]
+    # nothing is running after the (fake) job finished
+    assert client.post("/api/debug/ctl", json={"cmd": "continue"}).status_code == 409
+    assert client.post("/api/debug/ctl", json={"cmd": "explode"}).status_code == 422
