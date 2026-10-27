@@ -1,0 +1,11 @@
+# Set up Evil Pugs (instructions for a coding agent)
+
+You are setting up **Evil Pugs** (this repo) for your user: a local web app that chats with Qwen3.5-4B steered by single MLP neurons. Work from the repo root. Don't install anything system-wide and don't change other services.
+
+1. **Check the hardware.** Run `nvidia-smi` if it exists. The model needs about 10 GB of free VRAM on one NVIDIA GPU. Pick the GPU with the most free memory and note its index. Never stop or kill other GPU processes; if no GPU has room, tell your user it will run on the CPU (or Apple MPS) and be slow, and ask whether to continue.
+2. **Configure.** Copy `config.example.env` to `config.local.env`. Set `QN_DEVICE=cuda:<index>` for the GPU you picked (or leave `auto`). If your user already has the weights of `Qwen/Qwen3.5-4B` in a local folder, set `QN_MODEL` to that folder; otherwise leave it and the official weights (~9 GB) download on the first message. Only use the official `Qwen/Qwen3.5-4B` repo. Keep `QN_HOST=127.0.0.1` unless your user wants to reach it from other devices (then their LAN IP).
+3. **Install.** Run `./play setup`. It fetches uv into `./.uv` if needed and creates `.venv` with pinned deps and the right torch for the CUDA driver. Then run `./play test` and check the tests pass (the live GPU test may be skipped; that's fine).
+4. **Start it.** Run `./play --no-open` in the background, wait until `curl -s http://127.0.0.1:8765/api/status` answers (use the host/port from your config), then give your user the URL. To keep it running across reboots on Linux, run `deploy/install-user-service.sh` instead (a systemd user service: `systemctl --user status|stop|restart evil-pugs`).
+5. **First message.** The model loads lazily on the first message (from ~20 s, longer while it downloads). Tell your user: tap a pug to talk to it, ＋ mixes genes, 🥚 Breed hatches new pugs, and it unloads itself after 10 idle minutes.
+
+If something fails, read the error text in the app's status pill or the server output; the GPU errors name the processes holding memory.

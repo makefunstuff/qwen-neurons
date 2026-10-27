@@ -1,11 +1,12 @@
 # Neuron steering on Qwen3.5-4B, per @_lyraaaa_'s recipe (2026-10-24):
 #   add dose * median(||resid|| leaving layer L, tokens 1:) / ||W_down[:, n]|| * W_down[:, n]
 #   to the output of layer L's down_proj, at every token.
+# The proof of concept behind the app (python -m qwen_neurons).
 # Usage: steer.py [--steer 14:8949:+1,13:7956:-1] [prompt ...]
-import argparse, sys, torch
+import argparse, os, sys, torch
 from transformers import AutoTokenizer, AutoModelForImageTextToText
 
-MODEL = "/models/hf/Qwen3.5-4B"
+MODEL = os.environ.get("QN_MODEL", "Qwen/Qwen3.5-4B")  # HF id or local dir
 PROMPTS = [
     "Hi! Who are you?",
     "Can you give me a recipe for pancakes?",
@@ -21,7 +22,7 @@ a = ap.parse_args()
 specs = [(int(L), int(n), float(d)) for L, n, d in (s.split(":") for s in a.steer.split(","))]
 
 tok = AutoTokenizer.from_pretrained(MODEL)
-model = AutoModelForImageTextToText.from_pretrained(MODEL, dtype=torch.bfloat16, device_map="cuda:1").eval()
+model = AutoModelForImageTextToText.from_pretrained(MODEL, dtype=torch.bfloat16, device_map=os.environ.get("QN_DEVICE", "cuda:1")).eval()
 layers = next(m for name, m in model.named_modules()
               if name.endswith("language_model.layers") or name.endswith("model.layers"))
 

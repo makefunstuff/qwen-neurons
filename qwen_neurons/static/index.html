@@ -1,0 +1,85 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Evil Pugs</title>
+<meta name="description" content="Personality knobs for Qwen3.5-4B: a zoo of neuron-steered pugs you can chat with and breed.">
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🐶</text></svg>">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,500;12..96,700;12..96,800&family=JetBrains+Mono:wght@500;700&display=swap">
+<link rel="stylesheet" href="/static/app.css">
+</head>
+<body>
+<header class="top">
+  <button class="logo" id="logo" title="Evil Pugs" aria-label="Evil Pugs logo"></button>
+  <div class="brand">
+    <h1>Evil Pugs</h1>
+    <p>neuron-steered personality knobs for Qwen3.5-4B</p>
+  </div>
+  <div class="top-right">
+    <button class="pill" id="status" title="Model status">💤 napping</button>
+    <button class="ghost" id="btn-sleep" title="Unload the model and free the VRAM now">😴 Nap</button>
+    <button class="ghost icon" id="btn-theme" title="Light / dark">🌓</button>
+  </div>
+</header>
+
+<main class="game">
+  <section class="zoo" aria-label="The Neuron Zoo">
+    <div class="zoo-head">
+      <div>
+        <p class="kicker">Qwen3.5-4B · one neuron each</p>
+        <h2>The Neuron Zoo</h2>
+        <p class="sub">Tap a pug and it talks. <b>＋</b> mixes its genes into the one on stage.</p>
+      </div>
+      <div class="zoo-actions">
+        <button class="cta" id="btn-breed">🥚 Breed</button>
+        <button class="cta alt" id="btn-spin" title="Spin the wheel: a random mix of two creatures">🎰 Spin</button>
+      </div>
+    </div>
+    <div class="grid" id="zoo-grid"></div>
+    <p class="fineprint">
+      Scores: replies showing the trait out of 50 new questions, with "normal" the same count unsteered, from the
+      <a href="https://x.com/_lyraaaa_" target="_blank" rel="noopener">Qwen Neuron Zoo by @_lyraaaa_</a>.
+      <code>L24 N3102 +0.8</code> = layer 24, neuron 3102, pushed up by 0.8× the layer's typical residual size on every token.
+    </p>
+  </section>
+
+  <section class="stage" id="stage" aria-label="Chat">
+    <div class="stage-head">
+      <div class="star" id="star"></div>
+      <div class="star-info">
+        <h3 id="star-name">Plain Qwen</h3>
+        <p id="star-sub" class="star-sub">no knobs: the normal model</p>
+      </div>
+      <div class="stage-tools">
+        <label class="toggle" title="Let the model think before answering (slower)"><input type="checkbox" id="opt-think"><span>🧠 Think</span></label>
+        <label class="toggle" title="Show or hide the thinking"><input type="checkbox" id="opt-thoughts" checked><span>💭 Thoughts</span></label>
+        <label class="toggle" title="Each reply twice: plain Qwen and the creature, side by side"><input type="checkbox" id="opt-sbs"><span>⚖️ Side by side</span></label>
+      </div>
+    </div>
+
+    <div class="rack" id="rack"></div>
+
+    <div class="chat" id="chat" aria-live="polite"></div>
+
+    <div class="prompts" id="prompts"></div>
+    <form class="composer" id="composer">
+      <textarea id="input" rows="1" placeholder="Say something to the pug…" aria-label="Message"></textarea>
+      <button type="button" class="stop" id="btn-stop" hidden>■ Stop</button>
+      <button type="submit" class="send" id="btn-send">Send ↵</button>
+    </form>
+  </section>
+</main>
+
+<dialog id="breed-dlg" class="dlg">
+  <div class="dlg-body" id="breed-body"></div>
+</dialog>
+<dialog id="edit-dlg" class="dlg small">
+  <form class="dlg-body" id="edit-form" method="dialog"></form>
+</dialog>
+<div id="toasts" class="toasts" aria-live="polite"></div>
+<div id="fx" class="fx" aria-hidden="true"></div>
+<script type="module" src="/static/app.js"></script>
+</body>
+</html>

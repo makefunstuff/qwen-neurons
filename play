@@ -1,0 +1,32 @@
+#!/usr/bin/env bash
+# ./play — first run: set up Python + deps (with uv) and fetch the model; every run: start qwen-neurons.
+#   ./play --no-open        never open a browser tab (also QN_NO_BROWSER=1; it only opens from a terminal anyway)
+#   ./play setup            only set up
+#   ./play test             run the unit tests
+set -euo pipefail
+cd "$(dirname "$0")"
+
+UV="$(command -v uv || true)"
+if [ -z "$UV" ]; then
+  UV="$PWD/.uv/uv"
+  if [ ! -x "$UV" ]; then
+    echo "📦 Fetching uv (a fast Python package manager) into ./.uv — nothing is installed system-wide"
+    curl -LsSf https://astral.sh/uv/install.sh | env UV_INSTALL_DIR="$PWD/.uv" UV_NO_MODIFY_PATH=1 sh >/dev/null
+  fi
+fi
+
+stamp=.venv/.qn-deps
+want="$(cksum requirements.txt | cut -d' ' -f1)"
+if [ ! -f "$stamp" ] || [ "$(cat "$stamp")" != "$want" ]; then
+  echo "🧪 Setting up the lab (first run: Python 3.12 + torch, a few minutes)"
+  [ -x .venv/bin/python ] || "$UV" venv --python 3.12 .venv
+  "$UV" pip install --python .venv/bin/python --torch-backend=auto -r requirements.txt
+  echo "$want" > "$stamp"
+fi
+
+[ "${1:-}" = "setup" ] && exit 0
+if [ "${1:-}" = "test" ]; then
+  shift
+  exec .venv/bin/python -m pytest -q "$@"
+fi
+exec .venv/bin/python -m qwen_neurons "$@"

@@ -3,3 +3,7 @@ __pycache__/
 *.pyc
 data/
 presets.local.json
+config.local.env
+.env
+.uv/
+media/raw/

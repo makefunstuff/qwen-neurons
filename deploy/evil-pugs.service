@@ -1,0 +1,16 @@
+# systemd user unit; deploy/install-user-service.sh fills in @REPO@.
+# The model loads lazily on the first message and unloads after QN_IDLE_TIMEOUT_S, so idle costs no VRAM.
+[Unit]
+Description=Evil Pugs (qwen-neurons): neuron-steered personality knobs for Qwen3.5-4B
+After=network-online.target
+
+[Service]
+WorkingDirectory=@REPO@
+Environment=QN_NO_BROWSER=1
+Environment=PYTHONUNBUFFERED=1
+ExecStart=@REPO@/.venv/bin/python -m qwen_neurons --no-open
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=default.target
