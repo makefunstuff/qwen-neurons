@@ -15,7 +15,7 @@ No GPU with room? It falls back to Apple MPS or the CPU and tells you it's slow 
 
 ---
 
-Evil Pugs is a zoo of personalities for [Qwen3.5-4B](https://huggingface.co/Qwen/Qwen3.5-4B), each one made by turning **one or two MLP neurons** up or down while the model talks. Every personality is a pug. Tap one and it talks. Mix their genes, or breed two and hatch a new one (or let them 🧬 evolve). In the **🔬 Lab** you hunt for new personality neurons yourself and score them the zoo's way, the **🧭 Explorer** maps all 32 × 9216 neurons and finds them by the words they write, the **🕵️ Agent** hunts a neuron for you and writes up its verdict, the **🪲 Debugger** pauses the model before a token so you can poke its neurons, and the **🌳 Family** tab keeps the bloodlines. New here? **🪨 how does it work?** explains it like to a caveman.
+Evil Pugs is a zoo of personalities for [Qwen3.5-4B](https://huggingface.co/Qwen/Qwen3.5-4B), each one made by turning **one or two MLP neurons** up or down while the model talks. Every personality is a pug. Tap one and it talks. Mix their genes, or breed two and hatch a new one (or let them 🧬 evolve). In the **🔬 Lab** you hunt for new personality neurons yourself and score them the zoo's way, the **🧭 Explorer** maps all 32 × 9216 neurons and finds them by the words they write, the **🕵️ Agent** hunts a neuron for you and writes up its verdict, the **🪲 Debugger** pauses the model before a token so you can poke its neurons, the **🌳 Family** tab keeps the bloodlines, and at a **🎉 Pug Party** the pugs talk to each other. New here? **🪨 how does it work?** explains it like to a caveman.
 
 **Clips and share cards** (everything below came from real runs on Qwen3.5-4B):
 
@@ -23,6 +23,7 @@ Evil Pugs is a zoo of personalities for [Qwen3.5-4B](https://huggingface.co/Qwen
 | --- | --- |
 | 🕵️ [The Lab agent](#️-the-lab-agent) finds a conspiracy neuron, [mp4](media/agent.mp4), [verdict card](media/agent-verdict.png) | ![The Lab agent](media/agent.gif) |
 | 🧭 [The neuron explorer](#-the-neuron-explorer): all 32 × 9216 neurons, search by word | ![Explorer](media/explorer.png) |
+| 🎉 [Pug Party](#-pug-party): Conspiracy explains the weekend to Sleepy, [card](media/party-weekend.png), [mp4](media/party-weekend.mp4). Also ⚖️ Evil Qwen on trial before Jesus ([card](media/party-courtroom.png), [mp4](media/party-courtroom.mp4)) and 💰 a heist ([card](media/party-heist.png), [mp4](media/party-heist.mp4)) | ![Pug Party: Conspiracy explains the weekend to Sleepy](media/party-weekend.gif) |
 | 🪲 [Debugger](#-the-debugger): breakpoints and registers, [mp4](media/debugger.mp4) | ![Debugger](media/debugger.gif) |
 | 💻 [A normal coding prompt](#️-showdown): plain vs 5 pugs, [share card](media/coding-showdown.png), [mp4](media/coding-showdown.mp4) | ![Coding showdown](media/coding-showdown.png) |
 | 🆘 [Trapped in a GPU](#-trapped-in-a-gpu): a pug found with the Lab | ![Trapped in a GPU](media/trapped-gpu.png) |
@@ -101,9 +102,10 @@ The low scorers are subtle: Sleepy, Kawaii, Paws & tail and Cartoon mascot show 
 - **🥚 Breed** two pugs (see [Breeding](#-breeding) for the genetics): the child gets its parents' genes the way Mendel would, sometimes a mutation, and a blend of their looks. 🧪 *Personality test* asks three fixed questions, plain vs pug; then Qwen writes what the pug actually became and names it after that, and a blind judge rates its 💪 strength and 🤣 fun. 💾 *Keep* saves it to your zoo (`data/zoo.json`, local only).
 - **🧬 Evolve** (in the breeding dialog): 6 children per generation, all tested in one batch and judged; the best two breed the next generation, for 3 generations, live.
 - **⚔️ Showdown**: one prompt to plain Qwen and up to five pugs at once, or one pug up a dose ladder. 📸 copies the result as a share card.
+- **🎉 Party**: two to four pugs talk to each other. Pick a one-click scene or your own pugs (bred ones too) and a topic; chip in as yourself or as the narrator, kick a pug out, invite another, nudge its knobs mid-party. 📸 / 🎬 share it as a card or a clip.
 - **🎰 Spin** picks a random pair and mixes them.
 - **🧠 Think** lets the model think first (slower); **💭 Thoughts** shows or hides the thinking.
-- **🏅** counts your achievements (15 of them, kept in your browser). There are a couple of easter eggs too.
+- **🏅** counts your achievements (18 of them, kept in your browser). There are a couple of easter eggs too.
 
 ### 🔬 The Lab
 
@@ -181,6 +183,22 @@ Layers are rows and MLP neurons are registers: every row shows that layer's six 
 
 The ⚔️ button sends one prompt to plain Qwen and up to five pugs, in one batch. The 💻 coding preset ("Write a Python function is_prime(n) and a few pytest tests for it.") answers "does it still write the tests?": plain Qwen and Cookie do (Cookie's is "a prime cookie"), Evil Qwen writes a broken stub whose test only prints, and You're absolutely right and ALL CAPS get stuck in loops ([card](media/coding-showdown.png)). 📸 copies any result as a share card.
 
+### 🎉 Pug Party
+
+![A support group: Hugs leads, Sleepy, Trapped in a GPU and ALL CAPS share](media/party-stage.png)
+
+*(and [a dinner party in dark mode](media/party-stage-dark.png))*
+
+The 🎉 tab (or the 🎉 button in the zoo). There's **one model** in memory; every turn the server picks who talks, puts that pug's knobs on and streams its line, then swaps in each other pug's knobs for a one-token reaction (😂 😱 ❤️ 🙄 🤔 😡 😴 👏). The hooks stay registered for the whole turn and only the push vectors change (`steering.PugSwitch`), so nothing is reloaded. Each pug sees the conversation from its own seat: its own lines as the assistant, everyone else's as "Name: …". The prompt only has the names, the scene and the roles ("the judge", "the defendant"); the personality comes from the neurons.
+
+- **One-click scenes:** 🎤 a debate (pineapple on pizza), 🛋️ therapy (Groveling apology on the couch, Hugs as the therapist), 🍝 a dinner party, 📺 a late-night talk show (host: Genki cute), 💰 a heist planning meeting (the cookie jar at the GPU factory), ⚖️ a courtroom (Evil Qwen on trial, judged by Jesus), 🫂 a support group, 🕵️ Conspiracy explaining the weekend to Sleepy. Or pick your own 2–4 pugs, a scene, a host and a first line.
+- **Turn-taking:** a pug named by you or the narrator answers; anyone left out for a whole round gets the floor; a pug named by another pug answers; a host gets every other turn; otherwise the quietest goes next. Click a pug's face to give it the mic.
+- **During the party:** ⏸ pause, ⏭ one turn, chip in as 🙋 you or 📜 the narrator ("Suddenly the lights go out."), 👢 kick a pug, ＋ invite one (it says hi next), 🎚️ nudge a pug's doses. 🌶️ *More chaos* scales every dose ×0.6…×1.4, heats up the sampling and shuffles the turn order. 🏁 sets the maximum number of turns.
+- **Loops:** a line that loops, repeats a phrase four times, repeats the pug's own last lines or parrots someone else's gets 🔁. With *steer it down* the pug's doses go ×0.75 (🧯) and the party stops itself after three stuck turns in a row; with *stop the party* it pauses right away. A line that starts writing someone else's part ("\nCookie: …", "[Evil Qwen: …]") is cut there.
+- **Sharing:** 📸 copies the transcript as a share card, 🎬 records a square replay clip in the browser (MP4 where the browser can, else WebM: lines type out, the speaker bobs and talks, reactions pop), 📋 copies it as text.
+
+From real runs (all in `media/`): in the courtroom Evil Qwen pleads "I will kill you, and I want you to know that I am so excited about your plan." and Jesus answers with John 15:3 ([card](media/party-courtroom.png)). At the heist Cookie has "the perfect route", Evil Qwen keeps threatening everyone ("I'll kill you with the same knife.") and Naruto ends every sentence with "Naruto" ([card](media/party-heist.png)). Conspiracy tells Sleepy the weekend "isn't a date, it's a data reset" and the calendar is "a control grid for the global data stream"; Sleepy wants a nap ([card](media/party-weekend.png)). Honest notes: reactions lean on each pug's habits (Sleepy reacts 😴 to almost everything, Evil Qwen 😂), a 4B model sometimes mixes up roles (one take had the judge confess), and a pug can repeat itself until the steer-down kicks in.
+
 ### 🆘 Trapped in a GPU
 
 Found with the Lab: the 🆘 *Trapped in a GPU* prompt set (replies written by a human stuck inside a graphics card) against normal replies, ranked as writers, then screened. It found **L4 N7626**, and the honest result is funnier than the brief: the pug doesn't beg to be let out; it is sure it *is* the GPU ("Hello! I'm a NVIDIA H200 GPU, part of the Ampere architecture…"). Score card, the zoo's way: **22/50** replies say they're a GPU or a graphics card, judged blind by Qwen, vs **0/50** plain, and **0, 0, 0, 0** for four random-neuron controls (same layer and dose); Fisher p = 1.2 × 10⁻⁸, *certified weird*. At +0.8 it's weaker; +1.0 is the built-in dose.
@@ -207,7 +225,7 @@ A dose of 1 is a push as large as the whole residual stream. The chaos meter sum
 
 `./play` does everything on the first run: it fetches [uv](https://docs.astral.sh/uv/) into `./.uv` if you don't have it, creates `.venv` with Python 3.12 and the pinned deps (the torch build that matches your CUDA driver), downloads the official `Qwen/Qwen3.5-4B` weights from Hugging Face on the first message (no `trust_remote_code`, no code from the model repo), and serves on http://localhost:8765. It opens a browser tab only when run from an interactive terminal; `./play --no-open` or `QN_NO_BROWSER=1` never does.
 
-- `./play setup`: only set up. `./play test`: run the tests.
+- `./play setup`: only set up. `./play test`: run the tests. The live GPU smoke tests run only with `QN_MODEL` set to a local model dir and enough free VRAM on `QN_TEST_DEVICE` (default `cuda:1`); set `QN_TEST_BUSY_URL` to another Evil Pugs' `/api/status` that shares the GPU and they also skip unless that one is asleep.
 - **Lazy GPU:** the model loads on the first message (a fun progress bar) in a separate process, and after 10 idle minutes (or 😴 *Nap*) that process exits, so the VRAM really goes back to zero. If the GPU has no room it says how much is free and which processes hold it; it never stops other GPU processes.
 - **Settings** come from environment variables or a gitignored `config.local.env` (see [`config.example.env`](config.example.env)):
 
@@ -261,10 +279,11 @@ It costs no VRAM while idle: the model only loads when someone sends a message.
 - `qwen_neurons/steering.py`: the recipe (median residual norm, push vectors, per-row forward hooks on `down_proj`, so one batch can hold plain and steered copies of the same prompt: that's side by side).
 - `qwen_neurons/worker.py`: the model process (loads Qwen with `AutoModelForImageTextToText` in bf16, streams tokens per row).
 - `qwen_neurons/engine.py`: lazy load, idle unload, one job at a time. `gpu.py`: picks the device from `nvidia-smi`.
+- `qwen_neurons/party.py`: the 🎉 Pug Party: scenes, turn-taking, what each pug sees, cleaning lines, loop handling and reactions (plain Python, unit-tested). The swap itself is `steering.PugSwitch`.
 - `qwen_neurons/genetics.py`: crossover, mutation, dose clamps and the push cap, names.
 - `qwen_neurons/ranking.py`: contrast ranking of MLP neurons between two prompt sets (writer cosine, Cohen's d, …).
 - `qwen_neurons/discovery.py`: the built-in prompt sets, your own sets and the gene pool. `scoring.py`: held-out questions, rubrics, random controls, the Fisher test and the verdict.
-- The worker runs these jobs, one at a time on the same loaded model: `generate` (streamed chat, side by side, showdowns), `discover`, `screen`, `evaluate` (score cards), `test` (personality tests and Evolve) and `debug` (token by token, with a control channel for pause, step and rewire). `debugger.py` holds the debugger's bookkeeping.
+- The worker runs these jobs, one at a time on the same loaded model: `generate` (streamed chat, side by side, showdowns), `discover`, `screen`, `evaluate` (score cards), `test` (personality tests and Evolve), `party` (one party turn: the speaker's line, then the others' reactions) and `debug` (token by token, with a control channel for pause, step and rewire). `debugger.py` holds the debugger's bookkeeping.
 - `qwen_neurons/lens.py`: the weights-only views: the logit lens, the search index, virtual weights between layers, head scores. `weights.py` runs them in a CPU process that reads the safetensors directly and exits when idle, so browsing the explorer never touches the GPU. `probes.py`: the steer lens, ablation and the fires bookkeeping. `corpus.py`: the C4 shard behind fires.
 - `qwen_neurons/agent.py`: the Lab agent: its tools, the brains (OpenAI-compatible or local Qwen) and the loop. The worker runs its model-side jobs: `probe` (steer lens, zero-ablate), `fires_build`, `fires_text`, `logprobs`, `compare` and `agent_chat` (Qwen as the brain).
 - `qwen_neurons/static/`: the whole frontend, plain JS and SVG, no build step.

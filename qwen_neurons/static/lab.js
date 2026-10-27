@@ -38,6 +38,9 @@ const ACH = {
   party: ['🎉', 'Pug party', 'Found the party'],
   explorer: ['🧭', 'Cartographer', 'Looked inside a neuron in the explorer'],
   detective: ['🕵️', 'Neuron detective', 'The Lab agent closed a case with a verdict'],
+  host: ['🥂', 'Party host', 'Threw a Pug Party'],
+  bouncer: ['👢', 'Bouncer', 'Kicked a pug out of a party'],
+  director: ['🎬', 'Director', 'Recorded a party clip'],
 };
 function achGot() { try { return JSON.parse(localStorage.getItem('qn-ach') || '{}'); } catch { return {}; } }
 export function achieve(key) {
@@ -518,5 +521,5 @@ export async function initLab(ctx) {
   });
   let tab = 'zoo';
   try { tab = localStorage.getItem('qn-tab') || 'zoo'; } catch {}
-  showTab(['zoo', 'lab', 'explore', 'agent', 'family', 'debug'].includes(tab) ? tab : 'zoo');
+  showTab(['zoo', 'lab', 'explore', 'agent', 'family', 'debug', 'party'].includes(tab) ? tab : 'zoo');
 }
