@@ -113,6 +113,31 @@ The low scorers are subtle: Sleepy, Kawaii, Paws & tail and Cartoon mascot show 
 - **🎲 Mystery neuron** puts a random neuron from a middle layer on the stage.
 - **🧪 Score card** (also 🧪 *score* on the stage, or 🔬 *Score it* on a hatchling) scores whatever is on the stage the zoo's way: N held-out questions (10, 20 or 50; never used by the detector or the screen), a plain and a steered reply to each, plus random-neuron controls (the same layers and doses on random other neurons), all in one batch per question. Each reply is judged blind: by Qwen itself (unsteered; it sees only the question, one reply and the trait, and answers YES or NO), by a keyword rubric, or by an ALL CAPS rubric. The card shows the count out of N, normal, the controls, a one-sided **Fisher exact** p, and the zoo's bar: *certified weird* when p < 0.001 and it beats every control. Save the score to a creature (it then shows on its zoo card) or 📸 copy the card as an image.
 
+### 🧭 The neuron explorer
+
+![The explorer: searching "cookie", the Cookie neuron L24 N3102 selected, its web of virtual weights drawn on the map](media/explorer.png)
+
+All 32 × 9216 MLP neurons of Qwen3.5-4B, one dot each: a column of dots per layer, layer 0 on the left (◆ marks the full-attention layers). Drag, scroll to zoom, hover a dot for a card with what it writes, tap it to open it. The pink rings are the zoo's genes.
+
+- **🔎 Search by word.** The logit lens of every neuron (`W_U · (g ⊙ W_down[:, n])`, the tokens a push writes straight into the output) is computed once from the weights and indexed: the top and bottom 20 tokens of each neuron. Type `cookie`, `clandest`, `agenda`, `偷` and you get the neurons that write it: **side ＋** means pushing the neuron up writes the word, **side −** means pushing it down does. The search skips layers 0–2 and 27–31 by default (the last layers write tokens directly but rarely steer a personality); *all layers* turns that off.
+- **🔤 Logit lens:** what the neuron writes and what it suppresses, as z-scores over the 248k-token vocabulary.
+- **🎯 Steer lens:** push it ± on 12 fixed reference prompts (6 chat turns, 6 sentences cut mid-way) and compare the next token with plain Qwen: which tokens rise and fall, the KL, and the first token of each prompt. **🚫 zero-ablate** does the same with the neuron silenced.
+- **🔥 Fires:** the corpus snippets where the neuron's activation (the input to `down_proj`) is highest and lowest, with the act max. The corpus is the first 4096 documents of one [C4](https://huggingface.co/datasets/allenai/c4) validation shard (web text, ODC-BY), 64 tokens each, run through Qwen once (*🔥 build fires*) and cached. Or type your own text and see the neuron fire on every token.
+- **🕸️ Web:** the neurons that feed it (earlier layers) and the ones it pushes (later layers), ranked per layer, from the weights only, drawn as lines on the map (orange pushes toward, blue away). A link is how far a dose +1 push of one neuron moves the other's gate and up inputs: `√hidden · (w ⊙ g) · ĉ`, with `ĉ` the unit column of `W_down` and `g` the RMSNorm gain. Plus the attention heads that can write into its input (their output projection) and the ones that read its output (their value projection), for both the full-attention and the linear-attention (Gated DeltaNet) layers.
+- **▶ try**, **＋ mix**, **🧪 score** (the Lab's score card) and **🕵️ ask the agent** work on any neuron.
+
+The lens, the search, the web and the map need no forward pass: a separate CPU process reads the safetensors files directly and exits when idle, so browsing never wakes the GPU. The search index takes about 11 minutes on the CPU, once (*🔨 build the lens index*; 70 MB in `data/explorer/`). The steer lens and fires use the model like everything else.
+
+### 🕵️ The Lab agent
+
+AGENT_MEDIA
+
+Ask it for a personality neuron ("find me a conspiracy neuron") or to explain one. It works the way a person would in the explorer, with tools: **lens search**, **lens**, **fires** (the cached corpus, or texts it writes), **web**, **steer lens**, **zero-ablate**, **steer** (plain vs steered replies), **compare** (candidates side by side), **logprobs** (how likely a continuation is, plain vs steered or ablated) and **test prediction** (it writes a prediction first, then new prompts are judged blind). It finishes with a verdict in the author's format: a **name**, the **input evidence**, the **direct effect**, the **downstream effect**, the **test** and its confidence. From the verdict, **🧪 Score card** hands the genes to the Lab's evaluate mode, **🐶 Make it a pug** keeps it in your zoo, and **📸** copies the verdict as an image. The agent can also call the score card and make the pug itself.
+
+Its brain is set by env (see [Running it](#running-it)): **DeepSeek** (or any OpenAI-compatible endpoint, such as a local llama.cpp or vLLM server) when a key is set, or else the **plain local Qwen3.5-4B**, the model the app already has loaded, so it works with no key and no extra VRAM. The key comes from the environment, `config.local.env` or a key file, and never reaches the browser. The tests fake the brain; no test calls a real provider.
+
+AGENT_VALIDATION
+
 ### 🧬 Breeding
 
 - **Mendel.** Every gene (a layer, a neuron and a dose) is dominant or recessive, and a pug has one or two copies of it. Zoo founders are pure-bred: two copies of each gene. A parent passes one copy of each of its genes (always if it has two, half the time if it has one). A child shows a gene if it has two copies, or one copy of a dominant gene. One copy of a recessive gene is carried hidden (🫥 on the hatch screen), and two carriers can have a grandchild that shows it again. The zoo's genes get a fixed dominance (about one in three is recessive): Cookie's is recessive, so Evil Qwen × Cookie looks like Evil Qwen but carries the cookie gene. In the Evolve run in [`media/evolve.png`](media/evolve.png), cookie pugs came back in generation 3.
@@ -175,7 +200,7 @@ A dose of 1 is a push as large as the whole residual stream. The chaos meter sum
 | `QN_DEVICE` | `auto` | `auto` (the NVIDIA GPU with the most free memory, else MPS, else CPU), `cuda:N` (nvidia-smi numbering), `mps`, `cpu` |
 | `QN_IDLE_TIMEOUT_S` | `600` | unload after this many idle seconds |
 | `QN_NEED_MIB` | `10000` | free VRAM needed before loading on a GPU |
-| `QN_DATA_DIR` | `./data` | your bred pugs, prompt sets and gene pool |
+| `QN_DATA_DIR` | `./data` | your bred pugs, prompt sets, gene pool and the explorer's caches (lens index, fires) |
 | `QN_GPU_LABEL` | (none) | the GPU's name in messages; compose sets it to the host's index |
 | `QN_AGENT_PROVIDER` | `deepseek` with a key, else `qwen` | the [Lab agent](#️-the-lab-agent)'s brain: `deepseek`, `openai` (any OpenAI-compatible endpoint) or `qwen` (the app's own plain Qwen) |
 | `QN_AGENT_BASE_URL` | `https://api.deepseek.com` | for `openai`, e.g. a local llama.cpp or vLLM server's `http://127.0.0.1:8080/v1` |
@@ -198,8 +223,9 @@ docker compose up         # builds the CUDA 12.8 image the first time (~4 GB of 
 | `QN_GPU` | `1` | nvidia-smi index of the one GPU the container gets (the second GPU by default; `0` on a single-GPU machine) |
 | `QN_MODEL_DIR` | `./models/Qwen3.5-4B` | local weights, mounted read-only at `/model`; if there are none there, the official weights download from Hugging Face into the `hf-cache` volume |
 | `QN_IDLE_TIMEOUT_S` | `600` | unload after this many idle seconds |
+| `DEEPSEEK_API_KEY`, `QN_AGENT_*` | (none) | the Lab agent's brain, as above |
 
-Your pugs, prompt sets and gene pool live in the `pugs-data` volume. The lazy load and idle unload work the same inside the container: the model process starts on the first message and exits after the idle timeout or 😴 *Nap*, so an idle container holds no VRAM. Inside, the GPU it was given is `cuda:0`; messages still name it by the host's index (`QN_GPU_LABEL`, set from `QN_GPU`), but they can't name processes outside the container. Checked on a two-GPU machine with `QN_GPU=1`: the container sees only that GPU, loads the model on the first message, and 😴 *Nap* gives the VRAM back.
+Your pugs, prompt sets, gene pool and the explorer's caches live in the `pugs-data` volume. The lazy load and idle unload work the same inside the container: the model process starts on the first message and exits after the idle timeout or 😴 *Nap*, so an idle container holds no VRAM. Inside, the GPU it was given is `cuda:0`; messages still name it by the host's index (`QN_GPU_LABEL`, set from `QN_GPU`), but they can't name processes outside the container. Checked on a two-GPU machine with `QN_GPU=1`: the container sees only that GPU, loads the model on the first message, and 😴 *Nap* gives the VRAM back.
 
 ### As a systemd user service
 
