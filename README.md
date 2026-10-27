@@ -15,7 +15,7 @@ No GPU with room? It falls back to Apple MPS or the CPU and tells you it's slow 
 
 ---
 
-Evil Pugs is a zoo of personalities for [Qwen3.5-4B](https://huggingface.co/Qwen/Qwen3.5-4B), each one made by turning **one or two MLP neurons** up or down while the model talks. Every personality is a pug. Tap one and it talks. Mix their genes, or breed two and hatch a new one (or let them 🧬 evolve). In the **🔬 Lab** you hunt for new personality neurons yourself and score them the zoo's way, the **🪲 Debugger** pauses the model before a token so you can poke its neurons, and the **🌳 Family** tab keeps the bloodlines. New here? **🪨 how does it work?** explains it like to a caveman.
+Evil Pugs is a zoo of personalities for [Qwen3.5-4B](https://huggingface.co/Qwen/Qwen3.5-4B), each one made by turning **one or two MLP neurons** up or down while the model talks. Every personality is a pug. Tap one and it talks. Mix their genes, or breed two and hatch a new one (or let them 🧬 evolve). In the **🔬 Lab** you hunt for new personality neurons yourself and score them the zoo's way, the **🧭 Explorer** maps all 32 × 9216 neurons and finds them by the words they write, the **🕵️ Agent** hunts a neuron for you and writes up its verdict, the **🪲 Debugger** pauses the model before a token so you can poke its neurons, and the **🌳 Family** tab keeps the bloodlines. New here? **🪨 how does it work?** explains it like to a caveman.
 
 **Clips and share cards** (everything below came from real runs on Qwen3.5-4B):
 
@@ -35,6 +35,7 @@ This is a toy built on two posts by **[@_lyraaaa_](https://x.com/_lyraaaa_)** on
 - the original **"Evil Qwen"** post (2026-10-24): steer L14 N8949 +1 and L13 N7956 −1 and Qwen becomes an over-the-top villain (and very stupid). That is the recipe below.
 - the **"Qwen Neuron Zoo"** post: one neuron each, scored on 50 new questions. Those are the built-in pugs and their scores.
 - the **"Conspiracy"** post (2026-10-25): L19 N7839 −0.7 with L17 N9209 +0.5, a pair that writes "someone is hiding something on purpose". That is the 🕵️ Conspiracy pug.
+- their **videos of a neuron explorer**: the logit lens, steering, top activations and the web of a neuron, and verdicts written as input evidence, direct effect, downstream effect and a test. The 🧭 Explorer and the 🕵️ Agent are this repo's take on that.
 
 All the steering science is theirs; the pugs, the knobs and the breeding are the toy. The pug drawings are ported from the Puggie pets.
 
@@ -176,6 +177,10 @@ A dose of 1 is a push as large as the whole residual stream. The chaos meter sum
 | `QN_NEED_MIB` | `10000` | free VRAM needed before loading on a GPU |
 | `QN_DATA_DIR` | `./data` | your bred pugs, prompt sets and gene pool |
 | `QN_GPU_LABEL` | (none) | the GPU's name in messages; compose sets it to the host's index |
+| `QN_AGENT_PROVIDER` | `deepseek` with a key, else `qwen` | the [Lab agent](#️-the-lab-agent)'s brain: `deepseek`, `openai` (any OpenAI-compatible endpoint) or `qwen` (the app's own plain Qwen) |
+| `QN_AGENT_BASE_URL` | `https://api.deepseek.com` | for `openai`, e.g. a local llama.cpp or vLLM server's `http://127.0.0.1:8080/v1` |
+| `QN_AGENT_MODEL` | `deepseek-chat` | |
+| `QN_AGENT_API_KEY` | (none) | also `DEEPSEEK_API_KEY`, or a key file: `QN_AGENT_KEY_FILE` (default `~/.config/qwen-neurons/agent.key`). Keys are never sent to the browser |
 
 ### With Docker Compose
 
@@ -215,4 +220,6 @@ It costs no VRAM while idle: the model only loads when someone sends a message.
 - `qwen_neurons/ranking.py`: contrast ranking of MLP neurons between two prompt sets (writer cosine, Cohen's d, …).
 - `qwen_neurons/discovery.py`: the built-in prompt sets, your own sets and the gene pool. `scoring.py`: held-out questions, rubrics, random controls, the Fisher test and the verdict.
 - The worker runs these jobs, one at a time on the same loaded model: `generate` (streamed chat, side by side, showdowns), `discover`, `screen`, `evaluate` (score cards), `test` (personality tests and Evolve) and `debug` (token by token, with a control channel for pause, step and rewire). `debugger.py` holds the debugger's bookkeeping.
+- `qwen_neurons/lens.py`: the weights-only views: the logit lens, the search index, virtual weights between layers, head scores. `weights.py` runs them in a CPU process that reads the safetensors directly and exits when idle, so browsing the explorer never touches the GPU. `probes.py`: the steer lens, ablation and the fires bookkeeping. `corpus.py`: the C4 shard behind fires.
+- `qwen_neurons/agent.py`: the Lab agent: its tools, the brains (OpenAI-compatible or local Qwen) and the loop. The worker runs its model-side jobs: `probe` (steer lens, zero-ablate), `fires_build`, `fires_text`, `logprobs`, `compare` and `agent_chat` (Qwen as the brain).
 - `qwen_neurons/static/`: the whole frontend, plain JS and SVG, no build step.
