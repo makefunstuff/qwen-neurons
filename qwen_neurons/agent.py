@@ -211,7 +211,8 @@ TOOLS = [
          "ablate": {"type": "array", "items": {"type": "object", "properties": {"layer": _L, "neuron": _N}}}},
         ["prompt", "continuations"]),
     _fn("test_prediction", "Write a prediction first, then test it on held-out neutral questions (not about the "
-        "concept): plain vs steered, each reply judged blind, by keywords if given, else by Qwen for the trait.",
+        "concept): plain vs steered, each reply judged blind, by keywords if given (best when the trait shows as "
+        "words), else by Qwen for the trait, which must then be a full sentence such as 'mentions cookies'.",
         {"genes": _GENES, "prediction": {"type": "string"}, "trait": {"type": "string"},
          "keywords": {"type": "array", "items": {"type": "string"}}},
         ["genes", "prediction"]),
