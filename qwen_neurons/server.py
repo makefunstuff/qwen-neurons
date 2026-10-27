@@ -4,18 +4,21 @@ import json
 import random
 from contextlib import asynccontextmanager
 from pathlib import Path
+from typing import Annotated
 
 from fastapi import FastAPI, HTTPException
+from fastapi import Path as PathArg
 from fastapi.responses import FileResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
-from . import discovery, genetics, scoring
+from . import agent, discovery, genetics, scoring
 from .config import Settings
 from .creatures import Zoo, ancestry_node, clean
 from .discovery import GenePool, SetStore
 from .engine import Engine, ModelBusy
 from .steering import LOOP_ZONE, WARM_ZONE
+from .weights import WeightLab
 
 STATIC = Path(__file__).parent / "static"
 
@@ -129,6 +132,48 @@ class DebugCtl(BaseModel):
     breakpoints: Breakpoints | None = None
 
 
+LayerArg = Annotated[int, PathArg(ge=0, le=31)]
+NeuronArg = Annotated[int, PathArg(ge=0, le=9215)]
+
+
+class NeuronRef(BaseModel):
+    layer: int = Field(ge=0, le=31)
+    neuron: int = Field(ge=0, le=9215)
+
+
+class ProbeReq(BaseModel):
+    genes: list[Gene] = Field(min_length=1, max_length=6)
+    mode: str = Field("steer", pattern="^(steer|ablate)$")
+
+
+class FiresTextReq(BaseModel):
+    texts: list[str] = Field(min_length=1, max_length=8)
+    neurons: list[NeuronRef] = Field(min_length=1, max_length=6)
+
+
+class LogprobRow(BaseModel):
+    label: str = Field("", max_length=60)
+    genes: list[Gene] = Field(default_factory=list, max_length=6)
+    ablate: list[NeuronRef] = Field(default_factory=list, max_length=6)
+
+
+class LogprobsReq(BaseModel):
+    prompt: str = Field(min_length=1, max_length=2000)
+    chat: bool = True
+    continuations: list[str] = Field(min_length=1, max_length=8)
+    rows: list[LogprobRow] = Field(min_length=1, max_length=4)
+
+
+class FiresBuildReq(BaseModel):
+    n_docs: int = Field(4096, ge=16, le=20000)
+    max_tokens: int = Field(64, ge=16, le=256)
+
+
+class AgentReq(BaseModel):
+    goal: str = Field(min_length=1, max_length=2000)
+    max_steps: int = Field(agent.MAX_STEPS, ge=2, le=30)
+
+
 def sse(ev: dict) -> str:
     return f"data: {json.dumps(ev)}\n\n"
 
@@ -139,16 +184,22 @@ def create_app(s: Settings | None = None) -> FastAPI:
     zoo = Zoo(s.data_dir)
     sets = SetStore(s.data_dir)
     pool = GenePool(s.data_dir)
+    weights = WeightLab(s.model, s.data_dir, s.idle_timeout_s)
+    agent_cfg = agent.AgentConfig.from_env(s.agent_env)
+    agent_run = {"cancel": False, "running": False}
 
     @asynccontextmanager
     async def lifespan(app):
-        task = asyncio.create_task(engine.idle_watch())
+        tasks = [asyncio.create_task(engine.idle_watch()), asyncio.create_task(weights.idle_watch())]
         yield
-        task.cancel()
+        for t in tasks:
+            t.cancel()
         await engine.unload()
+        await weights.stop()
 
     app = FastAPI(title="qwen-neurons", lifespan=lifespan)
     app.state.engine, app.state.zoo, app.state.sets, app.state.pool = engine, zoo, sets, pool
+    app.state.weights, app.state.agent_cfg, app.state.brain = weights, agent_cfg, None
 
     @app.get("/")
     def index():
@@ -271,6 +322,141 @@ def create_app(s: Settings | None = None) -> FastAPI:
     def debug_ctl(req: DebugCtl):
         if not engine.control(req.model_dump(exclude_none=True)):
             raise HTTPException(409, "no debugger session is running")
+        return {"ok": True}
+
+    # ---- the neuron explorer ------------------------------------------------------------------------------
+    async def wcall(op: str, **kw):
+        try:
+            return await weights.call(op, **kw)
+        except RuntimeError as e:
+            raise HTTPException(409 if "yet" in str(e) else 500, str(e))
+
+    @app.get("/api/x/status")
+    def x_status():
+        d = weights.dir
+        parts = len(list(d.glob("lens-L*.pt"))) if d.is_dir() else 0
+        index = (d / "lens-index.pt").is_file()
+        return {"index": index, "index_layers": 32 if index else parts, "fires": (d / "fires.pt").is_file(),
+                "building": weights.building, "weights_process": weights.alive(), "agent": agent_cfg.public()}
+
+    @app.post("/api/x/index")
+    async def x_build_index():
+        if weights.building and weights.building.get("state") == "running":
+            return {"started": False, "building": weights.building}
+        weights.building = {"state": "running", "frac": 0.0, "msg": "starting the weights process"}
+
+        async def build():
+            try:
+                async for ev in weights.stream("build_index"):
+                    if ev["t"] == "progress":
+                        weights.building = {"state": "running", "frac": ev["frac"], "msg": ev["msg"]}
+                    elif ev["t"] == "error":
+                        weights.building = {"state": "error", "frac": 0.0, "msg": ev["msg"]}
+                    elif ev["t"] == "result":
+                        weights.building = {"state": "done", "frac": 1.0, "msg": "the lens index is ready"}
+            except Exception as e:  # noqa: BLE001
+                weights.building = {"state": "error", "frac": 0.0, "msg": str(e)}
+        app.state.index_task = asyncio.create_task(build())
+        return {"started": True, "building": weights.building}
+
+    @app.get("/api/x/lens/{layer}/{neuron}")
+    async def x_lens(layer: LayerArg, neuron: NeuronArg):
+        return await wcall("lens", layer=layer, neuron=neuron, k=16)
+
+    @app.get("/api/x/web/{layer}/{neuron}")
+    async def x_web(layer: LayerArg, neuron: NeuronArg):
+        return await wcall("web", layer=layer, neuron=neuron)
+
+    @app.get("/api/x/fires/{layer}/{neuron}")
+    async def x_fires(layer: LayerArg, neuron: NeuronArg):
+        return await wcall("fires", layer=layer, neuron=neuron)
+
+    @app.get("/api/x/card/{layer}/{neuron}")
+    async def x_card(layer: LayerArg, neuron: NeuronArg):
+        return await wcall("card", layer=layer, neuron=neuron)
+
+    @app.get("/api/x/search")
+    async def x_search(q: str, limit: int = 30, lo: int = 3, hi: int = 26):
+        if not q.strip() or len(q) > 40:
+            raise HTTPException(400, "search for a word (1-40 characters)")
+        lo, hi = max(0, min(lo, 31)), max(0, min(hi, 31))
+        return await wcall("search", query=q, limit=max(1, min(limit, 60)), lo=min(lo, hi), hi=max(lo, hi))
+
+    @app.get("/api/x/map")
+    async def x_map(color: str = "norm"):
+        if color not in ("norm", "act"):
+            raise HTTPException(400, "color is norm or act")
+        return await wcall("map", color=color)
+
+    @app.post("/api/x/probe")
+    async def x_probe(req: ProbeReq):
+        return run_job({"kind": "probe", "mode": req.mode, "genes": [g.model_dump() for g in req.genes]})
+
+    @app.post("/api/x/fires-text")
+    async def x_fires_text(req: FiresTextReq):
+        return run_job({"kind": "fires_text", "texts": [t[:1000] for t in req.texts],
+                        "neurons": [n.model_dump() for n in req.neurons]})
+
+    @app.post("/api/x/logprobs")
+    async def x_logprobs(req: LogprobsReq):
+        return run_job({"kind": "logprobs", **req.model_dump()})
+
+    @app.post("/api/x/fires-build")
+    async def x_fires_build(req: FiresBuildReq):
+        return run_job({"kind": "fires_build", "path": str(weights.dir / "fires.pt"), "n_docs": req.n_docs,
+                        "max_tokens": req.max_tokens, "k": 8, "batch": 16})
+
+    # ---- the Lab agent ------------------------------------------------------------------------------------
+    @app.get("/api/agent")
+    def agent_info():
+        return {**agent_cfg.public(), "running": agent_run["running"]}
+
+    async def job_result(job: dict) -> dict:
+        async for ev in engine.run(job):
+            if ev["t"] == "error":
+                raise RuntimeError(ev["msg"])
+            if ev["t"] == "result":
+                return ev
+        raise RuntimeError("the model job ended without a result")
+
+    def brain():
+        if app.state.brain is not None:          # tests put a fake here
+            return app.state.brain
+        if agent_cfg.provider == "qwen":
+            return agent.QwenProvider(job_result)
+        return agent.OpenAIProvider(agent_cfg)
+
+    @app.post("/api/agent")
+    async def agent_go(req: AgentReq):
+        if agent_run["running"]:
+            raise HTTPException(409, "the agent is already on a case")
+        if engine.job_lock.locked():
+            raise HTTPException(409, "Qwen is busy with another job; stop it first or wait a moment.")
+        try:
+            b = brain()
+        except ValueError as e:
+            raise HTTPException(400, str(e))
+        tools = agent.Toolbox(weights, engine.run, zoo)
+
+        async def stream():
+            agent_run.update(running=True, cancel=False)
+            try:
+                async for ev in agent.run_agent(req.goal, b, tools, req.max_steps):
+                    yield sse(ev)
+                    if agent_run["cancel"]:
+                        yield sse({"t": "agent_end", "reason": "stopped"})
+                        return
+            except ModelBusy as e:
+                yield sse({"t": "error", "msg": str(e)})
+            finally:
+                agent_run["running"] = False
+        return StreamingResponse(stream(), media_type="text/event-stream",
+                                 headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"})
+
+    @app.post("/api/agent/stop")
+    def agent_stop():
+        agent_run["cancel"] = True
+        engine.stop()
         return {"ok": True}
 
     @app.get("/api/sets")

@@ -89,7 +89,9 @@ class Worker:
 
     def run(self, job: dict, cancel) -> None:
         kinds = {"generate": self.generate, "discover": self.discover, "evaluate": self.evaluate, "screen": self.screen,
-                 "debug": self.debug, "test": self.test}
+                 "debug": self.debug, "test": self.test, "probe": self.probe, "fires_build": self.fires_build,
+                 "fires_text": self.fires_text, "logprobs": self.logprobs, "compare": self.compare,
+                 "agent_chat": self.agent_chat}
         if job["kind"] not in kinds:
             raise ValueError(f"unknown job {job['kind']}")
         kinds[job["kind"]](job, cancel)
@@ -545,6 +547,219 @@ class Worker:
             return self.ctl.get_nowait()
         except _queue.Empty:
             return None
+
+    # ---- the neuron explorer: forward-pass views ------------------------------------------------------------
+    def context_ids(self, text: str, chat: bool):
+        """A user turn ready for the reply (chat), or plain text to continue."""
+        if chat:
+            return self.prompt_ids([{"role": "user", "content": text}], False)
+        return self.tok(text, return_tensors="pt", add_special_tokens=False).to(self.device)
+
+    def edited_logits(self, ids, rows: list[dict]):
+        """One batch, one row per edit {genes: [...], ablate: [{layer, neuron}]}: logits [rows, tokens, vocab]."""
+        from .probes import RowEdits
+        from .steering import Knob
+        torch = self.torch
+        knobs = [[Knob.from_dict(g) for g in r.get("genes") or []] for r in rows]
+        _, pushes = self.steer_setup(ids, knobs)
+        zero: dict = {}
+        for i, r in enumerate(rows):
+            for a in r.get("ablate") or []:
+                zero.setdefault(int(a["layer"]), []).append((i, int(a["neuron"])))
+        B = len(rows)
+        batch = {k: v.repeat(B, *([1] * (v.dim() - 1))) for k, v in ids.items()}
+        with RowEdits(self.down, pushes, zero), torch.no_grad():
+            return self.model(**batch).logits.float()
+
+    def probe(self, job: dict, cancel) -> None:
+        """The steer lens (mode steer: plain vs +dose vs −dose) or a zero-ablation (mode ablate: plain vs zeroed)
+        on the reference prompts. job: mode, genes (the neuron(s) with their doses), prompts?, texts?."""
+        from .probes import REF_CHAT, REF_TEXT, kl, log_probs, token_shift
+        torch = self.torch
+        genes = job["genes"]
+        if job.get("mode") == "ablate":
+            rows = [{}, {"ablate": [{"layer": g["layer"], "neuron": g["neuron"]} for g in genes]}]
+            names = ["zeroed"]
+        else:
+            rows = [{}, {"genes": genes}, {"genes": [{**g, "dose": -g["dose"]} for g in genes]}]
+            names = ["push", "pull"]
+        ctx = [(t, True) for t in job.get("prompts") or REF_CHAT] + [(t, False) for t in job.get("texts") or REF_TEXT]
+        lps = [[] for _ in rows]
+        tops = []
+        for i, (text, chat) in enumerate(ctx):
+            if cancel.is_set():
+                self.emit(job, {"t": "stopped"})
+                return
+            lp = log_probs(self.edited_logits(self.context_ids(text, chat), rows)[:, -1]).cpu()
+            for r in range(len(rows)):
+                lps[r].append(lp[r])
+            tops.append({"text": text, "chat": chat, "next": [self.tok.decode([int(lp[r].argmax())]) for r in range(len(rows))],
+                         "kl": [round(float(kl(lp[0], lp[r])), 4) for r in range(1, len(rows))]})
+            self.emit(job, {"t": "step", "i": i + 1, "n": len(ctx), "msg": f"reference prompt {i + 1} of {len(ctx)}"})
+        lp0 = torch.stack(lps[0])
+        out = {}
+        for name, r in zip(names, range(1, len(rows))):
+            sh = token_shift(lp0, torch.stack(lps[r]))
+            for side in ("rising", "falling"):
+                for t in sh[side]:
+                    t["tok"] = self.tok.decode([t["id"]])
+            out[name] = sh
+        self.emit(job, {"t": "result", "kind": "probe", "mode": job.get("mode", "steer"), "genes": genes, **out,
+                        "prompts": tops})
+
+    def fires_build(self, job: dict, cancel) -> None:
+        """Run the corpus through the plain model once and keep, per neuron, the k documents where its activation is
+        highest (and lowest), with the token. job: path, n_docs, max_tokens, k, batch."""
+        from . import corpus
+        from .probes import doc_extremes, merge_top
+        torch = self.torch
+        T, k, B = int(job.get("max_tokens", 64)), int(job.get("k", 8)), int(job.get("batch", 16))
+        self.emit(job, {"t": "step", "i": 0, "n": 1, "msg": f"fetching the corpus: {corpus.SOURCE}"})
+        texts = job.get("texts") or corpus.load(int(job.get("n_docs", 4096)))
+        docs = [self.tok(t, add_special_tokens=False).input_ids[:T] for t in texts]
+        docs = [d for d in docs if len(d) >= 8]
+        D, nL, N = len(docs), len(self.layers), self.down[0].in_features
+        dev = self.device
+        st = {L: {"hv": torch.zeros(0, N, device=dev), "hd": torch.zeros(0, N, dtype=torch.long, device=dev),
+                  "hp": torch.zeros(0, N, dtype=torch.long, device=dev), "lv": torch.zeros(0, N, device=dev),
+                  "ld": torch.zeros(0, N, dtype=torch.long, device=dev), "lp": torch.zeros(0, N, dtype=torch.long, device=dev),
+                  "abs": torch.zeros(N, device=dev)} for L in range(nL)}
+        cur = {}
+
+        def hook(L):
+            def pre(module, inputs):
+                a, m = inputs[0], cur["mask"]
+                hv, hp, lv, lp = doc_extremes(a, m)
+                d = cur["doc"][:, None].expand_as(hp)
+                s = st[L]
+                s["hv"], s["hd"], s["hp"] = merge_top(s["hv"], s["hd"], s["hp"], hv, d, hp, k, True)
+                s["lv"], s["ld"], s["lp"] = merge_top(s["lv"], s["ld"], s["lp"], lv, d, lp, k, False)
+                s["abs"] += (a.float().abs() * m[..., None]).sum((0, 1))
+            return pre
+        handles = [self.down[L].register_forward_pre_hook(hook(L)) for L in range(nL)]
+        pad = self.tok.pad_token_id or 0
+        n_tok, t0 = 0, time.time()
+        try:
+            for b0 in range(0, D, B):
+                if cancel.is_set():
+                    self.emit(job, {"t": "stopped"})
+                    return
+                chunk = docs[b0:b0 + B]
+                ids = torch.full((len(chunk), T), pad, dtype=torch.long)
+                att = torch.zeros((len(chunk), T), dtype=torch.long)
+                for i, d in enumerate(chunk):
+                    ids[i, :len(d)] = torch.tensor(d)
+                    att[i, :len(d)] = 1
+                mask = att.bool()
+                mask[:, 0] = False                       # token 0 is an attention sink
+                cur["mask"], cur["doc"] = mask.to(dev), torch.arange(b0, b0 + len(chunk), device=dev)
+                n_tok += int(mask.sum())
+                with torch.no_grad():
+                    self.model(input_ids=ids.to(dev), attention_mask=att.to(dev))
+                done = min(D, b0 + B)
+                if done % (B * 8) == 0 or done == D:
+                    left = (time.time() - t0) / done * (D - done)
+                    self.emit(job, {"t": "step", "i": done, "n": D, "msg": f"read {done} of {D} documents · {left:.0f}s left"})
+        finally:
+            for h in handles:
+                h.remove()
+        docs_t = torch.zeros((D, T), dtype=torch.int32)
+        for i, d in enumerate(docs):
+            docs_t[i, :len(d)] = torch.tensor(d, dtype=torch.int32)
+        stack = lambda key, dt: torch.stack([st[L][key].T.contiguous() for L in range(nL)]).to(dt).cpu()
+        data = {"docs": docs_t, "lens": torch.tensor([len(d) for d in docs], dtype=torch.int16),
+                "top_v": stack("hv", torch.float16), "top_doc": stack("hd", torch.int32), "top_pos": stack("hp", torch.int16),
+                "bot_v": stack("lv", torch.float16), "bot_doc": stack("ld", torch.int32), "bot_pos": stack("lp", torch.int16),
+                "mean_abs": torch.stack([st[L]["abs"] / max(n_tok, 1) for L in range(nL)]).half().cpu(),
+                "source": job.get("source") or corpus.SOURCE, "n_tokens": n_tok}
+        path = job["path"]
+        os.makedirs(os.path.dirname(path), exist_ok=True)
+        torch.save(data, path + ".tmp")
+        os.replace(path + ".tmp", path)
+        self.emit(job, {"t": "result", "kind": "fires_build", "docs": D, "tokens": n_tok, "secs": round(time.time() - t0, 1)})
+
+    def fires_text(self, job: dict, cancel) -> None:
+        """Per-token activations of a few neurons on given texts. job: texts, neurons [{layer, neuron}], chat."""
+        torch = self.torch
+        neurons = [(int(x["layer"]), int(x["neuron"])) for x in job["neurons"]]
+        layers = sorted({L for L, _ in neurons})
+        cur = {}
+
+        def hook(L):
+            def pre(module, inputs):
+                cur[L] = inputs[0][0].float()
+            return pre
+        handles = [self.down[L].register_forward_pre_hook(hook(L)) for L in layers]
+        out = []
+        try:
+            for text in job["texts"]:
+                if cancel.is_set():
+                    break
+                ids = self.tok(text, return_tensors="pt", add_special_tokens=False).to(self.device)
+                with torch.no_grad():
+                    self.model(**ids)
+                toks = [self.tok.decode([t]) for t in ids["input_ids"][0].tolist()]
+                acts = {f"{L}:{n}": [round(float(v), 3) for v in cur[L][:, n].tolist()] for L, n in neurons}
+                out.append({"text": text, "tokens": toks, "acts": acts,
+                            "max": {k: max(v[1:] or v) for k, v in acts.items()},
+                            "min": {k: min(v[1:] or v) for k, v in acts.items()}})
+        finally:
+            for h in handles:
+                h.remove()
+        self.emit(job, {"t": "result", "kind": "fires_text", "texts": out})
+
+    def logprobs(self, job: dict, cancel) -> None:
+        """How likely each continuation is after a prompt, for each row. job: prompt, chat, continuations,
+        rows [{label, genes?, ablate?}]. Returns the summed and per-token log-probs."""
+        torch = self.torch
+        rows = job["rows"]
+        base = self.context_ids(job["prompt"], bool(job.get("chat", True)))
+        n0 = base["input_ids"].shape[1]
+        res = []
+        for cont in job["continuations"]:
+            if cancel.is_set():
+                break
+            cids = self.tok(cont, return_tensors="pt", add_special_tokens=False)["input_ids"].to(self.device)
+            ids = {"input_ids": torch.cat([base["input_ids"], cids], 1)}
+            if "attention_mask" in base:
+                ids["attention_mask"] = torch.ones_like(ids["input_ids"])
+            lp = torch.log_softmax(self.edited_logits(ids, rows)[:, n0 - 1:-1], -1)
+            tok_lp = lp.gather(-1, cids.expand(len(rows), -1)[..., None])[..., 0]
+            res.append({"text": cont, "tokens": [self.tok.decode([t]) for t in cids[0].tolist()],
+                        "rows": [{"label": r.get("label", f"row {i}"), "logprob": round(float(tok_lp[i].sum()), 3),
+                                  "per_token": [round(float(x), 3) for x in tok_lp[i].tolist()]} for i, r in enumerate(rows)]})
+        self.emit(job, {"t": "result", "kind": "logprobs", "prompt": job["prompt"], "continuations": res})
+
+    def compare(self, job: dict, cancel) -> None:
+        """Replies of several gene sets to the same prompts, one batch per prompt (row 0 is usually plain).
+        job: prompts, rows (gene lists), max_new_tokens, temperature, seed."""
+        from .steering import Knob
+        rows = [[Knob.from_dict(g) for g in r] for r in job["rows"]]
+        out = []
+        for qi, q in enumerate(job["prompts"]):
+            if cancel.is_set():
+                break
+            self.torch.manual_seed(int(job.get("seed") or 0) * 1000 + qi)
+            texts = self.gen_texts([{"role": "user", "content": q}], rows, job, cancel)
+            out.append({"prompt": q, "replies": texts})
+            self.emit(job, {"t": "step", "i": qi + 1, "n": len(job["prompts"]), "msg": f"prompt {qi + 1}: {q}"})
+        self.emit(job, {"t": "result", "kind": "compare", "rows": job["rows"], "replies": out})
+
+    def agent_chat(self, job: dict, cancel) -> None:
+        """The plain model as the Lab agent's brain: one assistant turn with tools. job: messages, tools,
+        max_new_tokens, think. The reply text goes back raw; agent.parse_qwen_reply finds the tool calls."""
+        torch = self.torch
+        ids = self.tok.apply_chat_template(job["messages"], tools=job.get("tools") or None, add_generation_prompt=True,
+                                           return_tensors="pt", return_dict=True,
+                                           enable_thinking=bool(job.get("think", False))).to(self.device)
+        n0 = ids["input_ids"].shape[1]
+        gen = self.gen_kwargs({"temperature": 0, "max_new_tokens": int(job.get("max_new_tokens", 700))}, cancel)
+        with torch.no_grad():
+            out = self.model.generate(**ids, **gen)
+        toks = out[0, n0:].tolist()
+        cut = next((i for i, t in enumerate(toks) if t in self.eos), len(toks))
+        self.emit(job, {"t": "result", "kind": "agent_chat", "text": self.tok.decode(toks[:cut], skip_special_tokens=True),
+                        "tokens": cut, "prompt_tokens": n0})
 
 
 class RowStreamer:

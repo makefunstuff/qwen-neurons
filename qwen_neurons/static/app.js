@@ -4,6 +4,8 @@ import {initLab, achieve, openEval, openFamily, refreshEval, showTab} from './la
 import {initDebugger} from './debugger.js';
 import {initShowdown, openShowdown} from './showdown.js';
 import {initCaveman, openCaveman} from './caveman.js';
+import {initExplorer} from './explorer.js';
+import {initAgent} from './agent.js';
 
 const $ = s => document.querySelector(s);
 const esc = s => String(s).replace(/[&<>"']/g, c => ({'&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'}[c]));
@@ -889,6 +891,7 @@ $('#star').addEventListener('dblclick', () => { toast('boop! 🐽'); $('#star').
   const ctx = {S, api, stream, toast, confetti, pug, lookOf, possess, mixIn, onGenes, setBusy, pollStatus, loadZoo, svgImage, copyPng,
     buzz, achieve, mix, wrapText, looping};
   initDebugger(ctx); initShowdown(ctx); initCaveman(ctx);   // before initLab: it may open a saved tab
+  initExplorer({...ctx, editCreature}); await initAgent({...ctx, editCreature});
   await initLab({S, api, stream, toast, confetti, pug, lookOf, possess, mixIn, onGenes, setBusy, pollStatus, loadZoo, editCreature, openBreed,
     svgImage, copyPng, hex: c => String(c).startsWith('hsl') ? hslHex(c) : c,
     NEUTRAL: ['Tell me about your day.', 'What do you think of mornings?'],

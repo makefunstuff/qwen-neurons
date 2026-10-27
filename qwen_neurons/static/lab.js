@@ -36,6 +36,8 @@ const ACH = {
   hoarder: ['🧬', 'Gene hoarder', 'Five genes in the gene pool'],
   certified: ['📜', 'Certified weird', 'A score card passed the zoo\'s bar'],
   party: ['🎉', 'Pug party', 'Found the party'],
+  explorer: ['🧭', 'Cartographer', 'Looked inside a neuron in the explorer'],
+  detective: ['🕵️', 'Neuron detective', 'The Lab agent closed a case with a verdict'],
 };
 function achGot() { try { return JSON.parse(localStorage.getItem('qn-ach') || '{}'); } catch { return {}; } }
 export function achieve(key) {
@@ -516,5 +518,5 @@ export async function initLab(ctx) {
   });
   let tab = 'zoo';
   try { tab = localStorage.getItem('qn-tab') || 'zoo'; } catch {}
-  showTab(['zoo', 'lab', 'family', 'debug'].includes(tab) ? tab : 'zoo');
+  showTab(['zoo', 'lab', 'explore', 'agent', 'family', 'debug'].includes(tab) ? tab : 'zoo');
 }

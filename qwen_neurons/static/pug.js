@@ -204,6 +204,14 @@ function gearSvg(g, ctx) {
     case 'partyhat':
       return {head: tri(38, top + 5, 54, top - 26, 64, top + 3, '#8e4ec6') + line(43, top - 2, 59, top - 5, GOLD, 2.4) +
         line(48, top - 12, 57, top - 14, GOLD, 2.4) + circle(54, top - 27, 4, '#ff8fa3')};
+    case 'magnifier':
+      return {front: line(86, 96, 76, 84, '#6b4a2b', 5) + ring(70, 77, 11, '#4a4f57', 3.4) +
+        circle(70, 77, 9.3, '#9ee7ff', ' opacity="0.4"') + strokePath('M64 73Q66 69 70 68', '#ffffff', 1.6)};
+    case 'deerstalker':
+      return {head: fillPath(`M${n(50 - rx * 0.86)} ${n(top + 7)}Q50 ${n(top - 20)} ${n(50 + rx * 0.86)} ${n(top + 7)}Z`, '#a0784a',
+        ' stroke="#6b4a2b" stroke-width="1.2"') + strokePath(`M38 ${n(top - 1)}Q50 ${n(top - 9)} 62 ${n(top - 1)}M44 ${n(top - 9)}L56 ${n(top - 9)}`, '#6b4a2b', 1) +
+        tri(50 - rx * 0.86, top + 7, 50 - rx - 6, top + 11, 50 - rx * 0.6, top + 10, '#8a6440') +
+        tri(50 + rx * 0.86, top + 7, 50 + rx + 6, top + 11, 50 + rx * 0.6, top + 10, '#8a6440') + circle(50, top - 12, 2.2, '#6b4a2b')};
     default: return {};
   }
 }
