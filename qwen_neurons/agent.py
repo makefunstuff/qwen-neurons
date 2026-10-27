@@ -210,10 +210,10 @@ TOOLS = [
         {"prompt": {"type": "string"}, "continuations": {"type": "array", "items": {"type": "string"}}, "genes": _GENES,
          "ablate": {"type": "array", "items": {"type": "object", "properties": {"layer": _L, "neuron": _N}}}},
         ["prompt", "continuations"]),
-    _fn("test_prediction", "Write a prediction first, then test it: new prompts, plain vs steered, each reply judged "
-        "blind (by keywords if given, else by Qwen for the trait).",
+    _fn("test_prediction", "Write a prediction first, then test it on held-out neutral questions (not about the "
+        "concept): plain vs steered, each reply judged blind, by keywords if given, else by Qwen for the trait.",
         {"genes": _GENES, "prediction": {"type": "string"}, "trait": {"type": "string"},
-         "keywords": {"type": "array", "items": {"type": "string"}}, "prompts": {"type": "array", "items": {"type": "string"}}},
+         "keywords": {"type": "array", "items": {"type": "string"}}},
         ["genes", "prediction"]),
     _fn("evaluate", "The Lab's score card: N held-out questions, blind judge, Fisher p and random-neuron controls "
         "(slow: about 3 s per question).", {"genes": _GENES, "trait": {"type": "string"}, "n": {"type": "integer"}},
@@ -238,10 +238,15 @@ W_down[:, n] at every token, so dose ±1 is a push as large as the residual stre
 summed |dose| above ~1.5 makes replies loop. A negative dose writes what the neuron's lens suppresses.
 
 Method (use the tools, one step at a time, and keep it short):
-1. lens_search for the concept: word stems, synonyms, other languages. Pick 2–4 candidates (layers 3–26 steer best).
-2. Check each: lens, steer_lens (direct effect, KL), fires or fires_on (input evidence), web (downstream).
-3. steer or compare the best on a couple of prompts; try both signs if unsure; zero_ablate or logprobs for detail.
-4. Before you finish, write a prediction and run test_prediction.
+1. lens_search for the concept and for the words that persona would say (for a conspiracy theorist: hidden, \
+secretly, agenda, truth, cover-up), with stems, synonyms and other languages. Pick 2–4 candidates (layers 3–26 \
+steer best). Mind the sign: a side − hit is written by a NEGATIVE dose.
+2. Check each: lens, steer_lens (direct effect, KL; a candidate whose steer lens doesn't move toward the concept is \
+not it), fires or fires_on (input evidence), web (downstream).
+3. steer or compare the best on everyday prompts that don't mention the concept (the trait must show up uninvited); \
+zero_ablate or logprobs for detail.
+4. Before the verdict, write a prediction and run test_prediction (held-out neutral questions). The verdict reports \
+its result as measured.
 5. Call verdict: name, genes, trait, input evidence, direct effect, downstream effect, the test and its result, and \
 your confidence. Report what you saw, not what you hoped: a neuron that does nothing gets an honest verdict too.
 Only steer with genes you have looked at. Don't explain the tools to the user."""
@@ -321,7 +326,8 @@ class Toolbox:
         res = await self.weights.call("search", query=str(a["query"])[:40], limit=min(int(a.get("limit") or 8), 20),
                                       lo=max(0, min(lo, 31)), hi=max(0, min(hi, 31)))
         lines = [f"L{r['layer']} N{r['neuron']} side {r['side']} score {r['score']} ({r['hits']} tokens: "
-                 + ", ".join(tok(t) for t in r["tokens"][:4]) + ")" for r in res["results"]]
+                 + ", ".join(tok(t) for t in r["tokens"][:4]) + f"); to write it, try dose {'+' if r['side'] == '+' else '-'}0.8"
+                 for r in res["results"]]
         yield self.done(res, f"{res['matched_tokens']} vocab tokens contain {a['query']!r}. "
                         + ("Top neurons:\n" + "\n".join(lines) if lines else "No neuron has them in its top 20."))
 
@@ -451,7 +457,7 @@ class Toolbox:
         gs = genes(a["genes"])
         kws = [str(k) for k in (a.get("keywords") or []) if str(k).strip()][:12]
         trait = str(a.get("trait") or a.get("prediction") or "")[:200]
-        prompts = [str(p)[:300] for p in (a.get("prompts") or scoring.SCREEN_QUESTIONS[:4])][:5]
+        prompts = scoring.SCREEN_QUESTIONS[:5]                 # held out and neutral: the trait has to show up uninvited
         judge = {"kind": "keywords", "keywords": kws} if kws else {"kind": "model"}
         res = None
         async for ev in self.job({"kind": "screen", "candidates": [gs], "trait": trait, "judge": judge, "questions": prompts,
@@ -495,7 +501,7 @@ async def run_agent(goal: str, brain, tools: Toolbox, max_steps: int = MAX_STEPS
     msgs = list(history or []) or [{"role": "system", "content": SYSTEM}]
     msgs.append({"role": "user", "content": goal})
     yield {"t": "agent_start", "brain": brain.name, "goal": goal}
-    nudged = False
+    nudged = tested = False
     for step in range(max_steps + 1):
         force = "verdict" if step == max_steps else None
         yield {"t": "agent_think", "step": step + 1}
@@ -520,6 +526,13 @@ async def run_agent(goal: str, brain, tools: Toolbox, max_steps: int = MAX_STEPS
             for c in calls]})
         for c in calls:
             yield {"t": "tool_call", "id": c["id"], "name": c["name"], "args": c["arguments"]}
+            if c["name"] == "verdict" and not tested and step < max_steps:
+                msgs.append({"role": "tool", "tool_call_id": c["id"], "content": "error: run test_prediction first "
+                             "(a prediction on held-out neutral questions), then call verdict with its result"})
+                yield {"t": "tool_result", "id": c["id"], "name": "verdict", "ok": False,
+                       "summary": "refused: no test_prediction yet", "data": None}
+                tested = True                               # ask once; a stubborn brain may still conclude
+                continue
             if c["name"] == "verdict":
                 try:
                     v = {**c["arguments"], "genes": genes(c["arguments"].get("genes"), 6)}
@@ -539,6 +552,7 @@ async def run_agent(goal: str, brain, tools: Toolbox, max_steps: int = MAX_STEPS
                         yield {**ev, "id": c["id"]}
             except Exception as e:  # noqa: BLE001 - the agent reads the error and can try something else
                 summary, ok = f"error: {e}", False
+            tested = tested or (c["name"] in ("test_prediction", "evaluate") and ok)
             yield {"t": "tool_result", "id": c["id"], "name": c["name"], "ok": ok, "summary": summary, "data": data}
             msgs.append({"role": "tool", "tool_call_id": c["id"], "content": summary})
     yield {"t": "agent_end", "steps": max_steps + 1, "reason": "out of steps"}

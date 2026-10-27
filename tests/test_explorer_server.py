@@ -131,7 +131,7 @@ def test_local_qwen_brain_frees_the_model_between_turns(tmp_path, monkeypatch):
     replies = iter(['<tool_call>\n<function=steer_lens>\n<parameter=genes>\n[{"layer": 24, "neuron": 3102, "dose": 0.8}]\n'
                     '</parameter>\n</function>\n</tool_call>',
                     '<tool_call>\n<function=verdict>\n<parameter=name>\ncookie\n</parameter>\n<parameter=genes>\n'
-                    '[{"layer": 24, "neuron": 3102, "dose": 0.8}]\n</parameter>\n</function>\n</tool_call>'])
+                    '[{"layer": 24, "neuron": 3102, "dose": 0.8}]\n</parameter>\n</function>\n</tool_call>'] * 2)
 
     async def locked_run(job):                       # like Engine.run: busy if a job holds the lock
         if lock.locked():

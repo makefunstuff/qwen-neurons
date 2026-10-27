@@ -250,3 +250,24 @@ def test_a_failing_job_still_frees_the_engine():
                 pass
         return lock.locked()
     assert asyncio.run(go()) is False
+
+
+def test_a_verdict_needs_a_test_first():
+    g = [{"layer": 24, "neuron": 3102, "dose": 0.8}]
+    v = call("verdict", name="cookie", genes=g, trait="cookies", direct_effect="-", test="none")
+    brain = ScriptedBrain([{"content": "", "tool_calls": [call("lens", layer=24, neuron=3102)]},
+                           {"content": "", "tool_calls": [v]},
+                           {"content": "", "tool_calls": [call("test_prediction", genes=g, prediction="cookies", keywords=["cookie"])]},
+                           {"content": "", "tool_calls": [v]}])
+    evs, jobs, *_ = run(brain)
+    refused = [e for e in evs if e["t"] == "tool_result" and e["name"] == "verdict"]
+    assert len(refused) == 1 and not refused[0]["ok"] and "test_prediction first" in brain.seen[2][0][-1]["content"]
+    assert evs[-2]["t"] == "verdict" and jobs[-1]["questions"] == agent.scoring.SCREEN_QUESTIONS[:5]
+
+
+def test_search_results_tell_the_sign():
+    brain = ScriptedBrain([{"content": "", "tool_calls": [call("lens_search", query="agenda")]},
+                           {"content": "", "tool_calls": [call("verdict", name="x", genes=[{"layer": 1, "neuron": 1, "dose": 1}])]}])
+    evs, *_ = run(brain, max_steps=1)
+    s = next(e for e in evs if e["t"] == "tool_result")["summary"]
+    assert "L17 N9209 side + score 18.2" in s and "try dose +0.8" in s and "L19 N7839 side - score 9.1" in s and "try dose -0.8" in s
