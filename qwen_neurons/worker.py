@@ -89,7 +89,7 @@ class Worker:
 
     def run(self, job: dict, cancel) -> None:
         kinds = {"generate": self.generate, "discover": self.discover, "evaluate": self.evaluate, "screen": self.screen,
-                 "debug": self.debug, "test": self.test}
+                 "debug": self.debug, "test": self.test, "party": self.party}
         if job["kind"] not in kinds:
             raise ValueError(f"unknown job {job['kind']}")
         kinds[job["kind"]](job, cancel)
@@ -398,6 +398,74 @@ class Worker:
             out.append(rec)
             self.emit(job, {"t": "test_creature", "i": c, **rec})
         self.emit(job, {"t": "result", "kind": "test", "plain": plain, "creatures": out})
+
+    # ---- the 🎉 Pug Party -----------------------------------------------------------------------------------
+    def _forget_rope(self) -> None:
+        for m in self.model.modules():  # generate() leaves M-RoPE deltas for its batch size
+            if getattr(m, "rope_deltas", None) is not None:
+                m.rope_deltas = None
+
+    def party(self, job: dict, cancel) -> None:
+        """One turn of a party. job (from party.plan_turn): speaker, me, guests, scene, messages, genes (chaos-scaled),
+        temperature, max_new_tokens, seed, previous (the speaker's earlier lines), policy, strikes, reactors.
+
+        One set of hooks (a PugSwitch) for the whole turn: the speaker's knobs go on, it talks (streamed, cut where
+        it starts writing someone else's line), then each reactor's knobs go on in turn and it picks a reaction."""
+        from transformers import StoppingCriteria
+        from .party import REACTIONS, cut_reply, is_stuck, loop_action, reaction_prompt
+        from .steering import Knob, PugSwitch
+        torch = self.torch
+        me, guests = job["me"], job["guests"]
+        self._forget_rope()
+        ids = self.prompt_ids(job["messages"], False)
+        n0 = ids["input_ids"].shape[1]
+        stats, pushes = self.steer_setup(ids, [[Knob.from_dict(g) for g in job["genes"]]])
+        tok, eos = self.tok, self.eos
+
+        class Cut(StoppingCriteria):  # stop once the pug starts speaking for someone else
+            def __call__(self, input_ids, scores, **kw):
+                new = [t for t in input_ids[0, n0:].tolist() if t not in eos]
+                done = len(new) > 3 and cut_reply(tok.decode(new, skip_special_tokens=True), me, guests)[1]
+                return torch.full((input_ids.shape[0],), done, dtype=torch.bool, device=input_ids.device)
+
+        with PugSwitch(self.down) as sw, torch.no_grad():
+            sw.wear({L: v[0] for L, v in pushes.items()}, me["id"])
+            self.emit(job, {"t": "wearing", "who": me["id"], "genes": job["genes"], "stats": stats[0] if stats else [],
+                            "layers": sorted(sw.current)})
+            streamer = RowStreamer(self.tok, 1, self.eos, False, lambda ev: self.emit(job, ev))
+            gen = self.gen_kwargs(job, cancel)
+            gen["stopping_criteria"].append(Cut())
+            torch.manual_seed(int(job.get("seed") or 0))
+            t0 = time.time()
+            out = self.model.generate(**ids, streamer=streamer, **gen)
+            streamer.finish("stopped" if cancel.is_set() else "length", time.time() - t0)
+            toks = out[0, n0:].tolist()
+            end = next((i for i, t in enumerate(toks) if t in self.eos), len(toks))
+            text, cut = cut_reply(self.tok.decode(toks[:end], skip_special_tokens=True).strip(), me, guests)
+            stuck = is_stuck(text, job.get("previous") or [])
+            action = loop_action(me["genes"], stuck, job.get("policy", "steer"), int(job.get("strikes") or 0))
+            self.emit(job, {"t": "said", "who": me["id"], "text": text, "cut": cut, "stuck": stuck, "action": action,
+                            "tokens": end, "stopped": cancel.is_set()})
+            if cancel.is_set() or not text:
+                return
+            cands = [self.tok.encode(e, add_special_tokens=False) for e in REACTIONS]
+            width = max(map(len, cands))
+            for r in job.get("reactors") or []:
+                if cancel.is_set():
+                    return
+                self._forget_rope()
+                rid = self.prompt_ids(reaction_prompt(r, me["name"], text, job.get("scene", "")), False)["input_ids"]
+                sw.wear({})  # the residual scale comes from an unsteered pass
+                _, rp = self.steer_setup({"input_ids": rid}, [[Knob.from_dict(g) for g in r["genes"]]])
+                sw.wear({L: v[0] for L, v in rp.items()}, r["id"])  # the same hooks, this pug's knobs
+                m = rid.shape[1]
+                batch = torch.tensor([rid[0].tolist() + c + [c[-1]] * (width - len(c)) for c in cands], device=self.device)
+                self._forget_rope()
+                logp = torch.log_softmax(self.model(input_ids=batch).logits[:, m - 1:-1].float(), -1)
+                scores = [float(sum(logp[i, j, t] for j, t in enumerate(c))) for i, c in enumerate(cands)]
+                best = max(range(len(REACTIONS)), key=lambda i: scores[i])
+                self.emit(job, {"t": "reaction", "who": r["id"], "to": me["id"], "emoji": REACTIONS[best],
+                                "p": round(float(torch.softmax(torch.tensor(scores), 0)[best]), 3)})
 
     # ---- the debugger ---------------------------------------------------------------------------------------
     def debug(self, job: dict, cancel) -> None:
