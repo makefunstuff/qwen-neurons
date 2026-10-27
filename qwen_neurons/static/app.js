@@ -4,6 +4,7 @@ import {initLab, achieve, openEval, openFamily, refreshEval, showTab} from './la
 import {initDebugger} from './debugger.js';
 import {initShowdown, openShowdown} from './showdown.js';
 import {initCaveman, openCaveman} from './caveman.js';
+import {initParty, openParty} from './party.js';
 
 const $ = s => document.querySelector(s);
 const esc = s => String(s).replace(/[&<>"']/g, c => ({'&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'}[c]));
@@ -889,12 +890,14 @@ $('#star').addEventListener('dblclick', () => { toast('boop! 🐽'); $('#star').
   const ctx = {S, api, stream, toast, confetti, pug, lookOf, possess, mixIn, onGenes, setBusy, pollStatus, loadZoo, svgImage, copyPng,
     buzz, achieve, mix, wrapText, looping};
   initDebugger(ctx); initShowdown(ctx); initCaveman(ctx);   // before initLab: it may open a saved tab
+  await initParty({...ctx, showTab});
   await initLab({S, api, stream, toast, confetti, pug, lookOf, possess, mixIn, onGenes, setBusy, pollStatus, loadZoo, editCreature, openBreed,
     svgImage, copyPng, hex: c => String(c).startsWith('hsl') ? hslHex(c) : c,
     NEUTRAL: ['Tell me about your day.', 'What do you think of mornings?'],
     buzz, achieve, mix, wrapText, looping,
     onScored: r => { if (B.child && r.who.star === B.child) B.child.score = {trait: r.trait, normal: r.normal, n: r.n, controls: r.controls, p: r.p, passed: r.passed, source: 'your lab', what: r.what}; }});
   $('#btn-show').addEventListener('click', () => openShowdown());
+  $('#btn-party').addEventListener('click', () => openParty());
   $('#btn-cave').addEventListener('click', openCaveman);
   pollStatus();
   setInterval(pollStatus, 5000);

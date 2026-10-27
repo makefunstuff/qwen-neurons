@@ -36,6 +36,9 @@ const ACH = {
   hoarder: ['🧬', 'Gene hoarder', 'Five genes in the gene pool'],
   certified: ['📜', 'Certified weird', 'A score card passed the zoo\'s bar'],
   party: ['🎉', 'Pug party', 'Found the party'],
+  host: ['🥂', 'Party host', 'Threw a Pug Party'],
+  bouncer: ['👢', 'Bouncer', 'Kicked a pug out of a party'],
+  director: ['🎬', 'Director', 'Recorded a party clip'],
 };
 function achGot() { try { return JSON.parse(localStorage.getItem('qn-ach') || '{}'); } catch { return {}; } }
 export function achieve(key) {

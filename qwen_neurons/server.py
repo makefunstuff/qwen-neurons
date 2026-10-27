@@ -152,7 +152,7 @@ class PartyTurnReq(BaseModel):
     chaos: float = Field(0.5, ge=0, le=1)
     max_new_tokens: int = Field(110, ge=16, le=300)
     policy: str = Field("steer", pattern="^(steer|stop)$")
-    strikes: int = Field(0, ge=0, le=20)
+    strikes: dict[str, int] = Field(default_factory=dict)   # stuck turns in a row, per guest id
     reactions: bool = True
     seed: int = 0
 
@@ -317,7 +317,7 @@ def create_app(s: Settings | None = None) -> FastAPI:
                                req.scene, host=req.host, chaos=req.chaos, seed=req.seed + len(req.transcript),
                                speaker=req.speaker, reactions=req.reactions)
         job = {"kind": "party", **plan, "max_new_tokens": req.max_new_tokens, "policy": req.policy,
-               "strikes": req.strikes, "seed": req.seed + len(req.transcript)}
+               "strikes": min(20, max(0, req.strikes.get(plan["speaker"], 0))), "seed": req.seed + len(req.transcript)}
         return run_job(job, {"t": "speaker", "who": plan["speaker"], "name": plan["name"], "genes": plan["genes"],
                              "temperature": plan["temperature"]})
 

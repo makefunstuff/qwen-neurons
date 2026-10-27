@@ -27,7 +27,7 @@
 
 <main class="game">
   <section class="zoo" aria-label="The Neuron Zoo">
-    <nav class="tabs" aria-label="Sections"><button data-tab="zoo" class="on">🐶 Zoo</button><button data-tab="lab">🔬 Lab</button><button data-tab="family">🌳 Family</button><button data-tab="debug">🪲 Debugger</button></nav>
+    <nav class="tabs" aria-label="Sections"><button data-tab="zoo" class="on">🐶 Zoo</button><button data-tab="lab">🔬 Lab</button><button data-tab="family">🌳 Family</button><button data-tab="debug">🪲 Debugger</button><button data-tab="party">🎉 Party</button></nav>
     <div class="pane" id="pane-zoo">
     <div class="zoo-head">
       <div>
@@ -39,6 +39,7 @@
         <button class="cta" id="btn-breed">🥚 Breed</button>
         <button class="cta alt" id="btn-spin" title="Spin the wheel: a random mix of two creatures">🎰 Spin</button>
         <button class="cta alt2" id="btn-show" title="One prompt, several pugs side by side (or one pug up a dose ladder)">⚔️ Showdown</button>
+        <button class="cta alt3" id="btn-party" title="Pugs talking to each other: a dinner party, a courtroom, a talk show…">🎉 Party</button>
       </div>
     </div>
     <div class="grid" id="zoo-grid"></div>
@@ -51,6 +52,7 @@
     <div class="pane" id="pane-lab" hidden></div>
     <div class="pane" id="pane-family" hidden></div>
     <div class="pane" id="pane-debug" hidden></div>
+    <div class="pane" id="pane-party" hidden></div>
   </section>
 
   <section class="stage" id="stage" aria-label="Chat">
@@ -97,6 +99,9 @@
 </dialog>
 <dialog id="cave-dlg" class="dlg">
   <div class="dlg-body" id="cave-body"></div>
+</dialog>
+<dialog id="clip-dlg" class="dlg">
+  <div class="dlg-body" id="clip-body"></div>
 </dialog>
 <div id="toasts" class="toasts" aria-live="polite"></div>
 <div id="fx" class="fx" aria-hidden="true"></div>
