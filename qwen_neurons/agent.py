@@ -289,15 +289,18 @@ class Toolbox:
         self.weights, self.stream, self.zoo = weights, run_job_stream, zoo
 
     async def job(self, job: dict):
-        """Run a model job; yields progress events; the last event is the result."""
-        result = None
+        """Run a model job; yields progress events; the last event is the result. The job's stream is always read to
+        its end: leaving it early would keep the engine's job lock held."""
+        result = error = None
         async for ev in self.stream(job):
             if ev["t"] == "error":
-                raise RuntimeError(ev["msg"])
-            if ev["t"] == "result":
+                error = error or ev["msg"]
+            elif ev["t"] == "result":
                 result = ev
             elif ev["t"] in ("step", "progress", "eval_q", "screen_q"):
                 yield {"t": "tool_progress", "msg": ev.get("msg") or (f"question {ev['i']}/{ev['n']}" if "i" in ev else "")}
+        if error:
+            raise RuntimeError(error)
         if result is None:
             raise RuntimeError("the model job ended without a result (stopped?)")
         yield result

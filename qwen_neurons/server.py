@@ -412,12 +412,16 @@ def create_app(s: Settings | None = None) -> FastAPI:
         return {**agent_cfg.public(), "running": agent_run["running"]}
 
     async def job_result(job: dict) -> dict:
+        """Run a model job to its end (leaving early would keep engine.run holding the job lock) -> its result."""
+        result = error = None
         async for ev in engine.run(job):
             if ev["t"] == "error":
-                raise RuntimeError(ev["msg"])
-            if ev["t"] == "result":
-                return ev
-        raise RuntimeError("the model job ended without a result")
+                error = error or ev["msg"]
+            elif ev["t"] == "result":
+                result = ev
+        if error or result is None:
+            raise RuntimeError(error or "the model job ended without a result")
+        return result
 
     def brain():
         if app.state.brain is not None:          # tests put a fake here

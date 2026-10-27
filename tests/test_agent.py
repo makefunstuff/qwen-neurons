@@ -233,3 +233,20 @@ def test_agent_reports_a_broken_brain():
             raise RuntimeError("connection refused")
     evs, *_ = run(Broken())
     assert evs[-1]["t"] == "error" and "connection refused" in evs[-1]["msg"]
+
+
+def test_a_failing_job_still_frees_the_engine():
+    lock = asyncio.Lock()
+
+    async def stream(job):
+        async with lock:
+            yield {"t": "error", "msg": "CUDA out of memory"}
+            yield {"t": "done"}
+    tools = agent.Toolbox(FakeWeights(), stream)
+
+    async def go():
+        with pytest.raises(RuntimeError, match="out of memory"):
+            async for _ in tools.run("steer_lens", {"genes": [{"layer": 1, "neuron": 2, "dose": 0.5}]}):
+                pass
+        return lock.locked()
+    assert asyncio.run(go()) is False

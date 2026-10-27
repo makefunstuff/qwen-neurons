@@ -120,3 +120,33 @@ def test_agent_needs_a_key_for_deepseek(tmp_path, monkeypatch):
     assert c.get("/api/agent").json()["ready"] is False
     r = c.post("/api/agent", json={"goal": "find me a cookie neuron"})
     assert r.status_code == 400 and "key" in r.json()["detail"]
+
+
+def test_local_qwen_brain_frees_the_model_between_turns(tmp_path, monkeypatch):
+    """With the local Qwen brain, every turn and every tool is a job on the same engine: each must give the job lock
+    back (a regression: reading only up to the result left the lock held, so the next tool got 'Qwen is busy')."""
+    import asyncio
+    app = create_app(Settings.load({"QN_DATA_DIR": str(tmp_path), "QN_AGENT_PROVIDER": "qwen"}))
+    lock = asyncio.Lock()
+    replies = iter(['<tool_call>\n<function=steer_lens>\n<parameter=genes>\n[{"layer": 24, "neuron": 3102, "dose": 0.8}]\n'
+                    '</parameter>\n</function>\n</tool_call>',
+                    '<tool_call>\n<function=verdict>\n<parameter=name>\ncookie\n</parameter>\n<parameter=genes>\n'
+                    '[{"layer": 24, "neuron": 3102, "dose": 0.8}]\n</parameter>\n</function>\n</tool_call>'])
+
+    async def locked_run(job):                       # like Engine.run: busy if a job holds the lock
+        if lock.locked():
+            yield {"t": "error", "msg": "Qwen is busy with another reply"}
+            return
+        async with lock:
+            if job["kind"] == "agent_chat":
+                yield {"t": "result", "kind": "agent_chat", "text": next(replies)}
+            else:
+                yield {"t": "result", "kind": "probe", "genes": job["genes"], "push": {"kl": 0.2, "rising": [], "falling": []},
+                       "pull": {"kl": 0.1, "rising": [], "falling": []}, "prompts": []}
+            yield {"t": "after-result bookkeeping"}
+    monkeypatch.setattr(app.state.engine, "run", locked_run)
+    monkeypatch.setattr("qwen_neurons.engine.gpu.gpus", lambda: [])
+    ev = events(TestClient(app).post("/api/agent", json={"goal": "find me a cookie neuron"}))
+    res = next(e for e in ev if e["t"] == "tool_result")
+    assert res["ok"], res
+    assert [e["t"] for e in ev][-2:] == ["verdict", "agent_end"] and not lock.locked()
